@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 type EventType = "feeding" | "diaper" | "sleep";
 
-type FeedingMethod = "breast" | "formula";
+type FeedingMethod = "breast" | "formula" | "pumped";
 
 type DiaperKind = "wet" | "dirty" | "both";
 
@@ -148,11 +148,13 @@ export default function Home() {
       todayFeedings: 0,
       todayFeedingsAmount: 0,
       todayBreastMinutes: 0,
+      todayPumpedAmount: 0,
       todayDiapers: 0,
       todaySleepMinutes: 0,
       totalFeedings: 0,
       totalFeedingsAmount: 0,
       totalBreastMinutes: 0,
+      totalPumpedAmount: 0,
       totalDiapers: 0,
       totalSleepMinutes: 0,
     };
@@ -161,7 +163,10 @@ export default function Home() {
       if (e.type === "feeding") {
         base.totalFeedings += 1;
 
-        if (e.feedingMethod === "formula" && typeof e.amountMl === "number") {
+        if (
+          (e.feedingMethod === "formula" || e.feedingMethod === "pumped") &&
+          typeof e.amountMl === "number"
+        ) {
           base.totalFeedingsAmount += e.amountMl;
         }
         if (
@@ -175,10 +180,13 @@ export default function Home() {
           base.todayFeedings += 1;
 
           if (
-            e.feedingMethod === "formula" &&
+            (e.feedingMethod === "formula" || e.feedingMethod === "pumped") &&
             typeof e.amountMl === "number"
           ) {
             base.todayFeedingsAmount += e.amountMl;
+            if (e.feedingMethod === "pumped") {
+              base.todayPumpedAmount += e.amountMl;
+            }
           }
           if (
             e.feedingMethod === "breast" &&
@@ -360,6 +368,8 @@ export default function Home() {
     if (targetType === "feeding") {
       const isFormula = feedingMethod === "formula";
       const isBreast = feedingMethod === "breast";
+      const isAmountBased =
+        feedingMethod === "formula" || feedingMethod === "pumped";
 
       if (isBreast) {
         const active = activeBreastFeeding;
@@ -431,9 +441,9 @@ export default function Home() {
           notes: null,
           feeding_method: feedingMethod,
           amount_ml:
-            isFormula && amountMl ? Number(amountMl) || null : null,
+            isAmountBased && amountMl ? Number(amountMl) || null : null,
           duration_minutes:
-            isFormula && durationMinutes
+            !isAmountBased && durationMinutes
               ? Number(durationMinutes) || null
               : null,
           diaper_kind: null,
@@ -904,6 +914,12 @@ export default function Home() {
                   </span>
                 </p>
                 <p className="flex items-center justify-between text-slate-300">
+                  <span>Mamos pienas</span>
+                  <span className="font-semibold text-sky-200">
+                    {stats.todayPumpedAmount} ml
+                  </span>
+                </p>
+                <p className="flex items-center justify-between text-slate-300">
                   <span>Krūtimi</span>
                   <span className="font-semibold text-sky-200">
                     {stats.totalBreastMinutes} min
@@ -979,7 +995,7 @@ export default function Home() {
                     <p className="text-[11px] font-medium text-slate-600">
                       Maitinimo tipas
                     </p>
-                    <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px] font-medium">
+                    <div className="flex flex-col gap-1 rounded-2xl bg-slate-100 p-1.5 text-[11px] font-medium">
                       <button
                         type="button"
                         onClick={() => setFeedingMethod("breast")}
@@ -1002,10 +1018,21 @@ export default function Home() {
                       >
                         Mišinėlis
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeedingMethod("pumped")}
+                        className={`rounded-full px-3 py-2 transition ${
+                          feedingMethod === "pumped"
+                            ? "bg-sky-600 text-white shadow-sm"
+                            : "text-slate-700 hover:text-slate-900"
+                        }`}
+                      >
+                        Mamos pienas
+                      </button>
                     </div>
                   </div>
                 <div className="grid gap-2">
-                  {feedingMethod === "formula" && (
+                  {(feedingMethod === "formula" || feedingMethod === "pumped") && (
                     <div className="space-y-1">
                       <label className="text-[11px] font-medium text-slate-600">
                         Kiekis (ml)
@@ -1109,7 +1136,7 @@ export default function Home() {
                   <p className="text-[11px] font-medium text-slate-600">
                     Sauskelnių tipas
                   </p>
-                  <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px] font-medium">
+                  <div className="flex flex-col gap-1 rounded-2xl bg-slate-100 p-1.5 text-[11px] font-medium">
                     <button
                       type="button"
                       onClick={() => setDiaperKind("wet")}
@@ -1323,8 +1350,13 @@ export default function Home() {
                             {e.type === "feeding"
                               ? e.feedingMethod === "breast"
                                 ? "Krūtimi"
+                                : e.feedingMethod === "pumped"
+                                ? `Mamos pienas${
+                                    e.amountMl ? ` ${e.amountMl} ml` : ""
+                                  }`
                                 : `Mišinėlis${
-                                    e.amountMl && e.feedingMethod === "formula"
+                                    e.amountMl &&
+                                    e.feedingMethod === "formula"
                                       ? ` ${e.amountMl} ml`
                                       : ""
                                   }`

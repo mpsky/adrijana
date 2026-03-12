@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type EventType = "feeding" | "diaper" | "sleep";
-type FeedingMethod = "breast" | "formula";
+type FeedingMethod = "breast" | "formula" | "pumped";
 type DiaperKind = "wet" | "dirty" | "both";
 
 type FeedingEvent = {
@@ -197,15 +197,16 @@ export default function AdminPage() {
       if (!editingId) {
         // CREATE
         if (type === "feeding") {
-          const isFormula = feedingMethod === "formula";
+          const isAmountBased =
+            feedingMethod === "formula" || feedingMethod === "pumped";
           const payload = {
             type: "feeding",
             time: timeIso,
             feeding_method: feedingMethod,
             amount_ml:
-              isFormula && amountMl ? Number(amountMl) || null : null,
+              isAmountBased && amountMl ? Number(amountMl) || null : null,
             duration_minutes:
-              !isFormula && durationMinutes
+              !isAmountBased && durationMinutes
                 ? Number(durationMinutes) || null
                 : null,
             diaper_kind: null,
@@ -287,15 +288,16 @@ export default function AdminPage() {
       } else {
         // UPDATE
         if (type === "feeding") {
-          const isFormula = feedingMethod === "formula";
+          const isAmountBased =
+            feedingMethod === "formula" || feedingMethod === "pumped";
           const payload = {
             type: "feeding",
             time: timeIso,
             feeding_method: feedingMethod,
             amount_ml:
-              isFormula && amountMl ? Number(amountMl) || null : null,
+              isAmountBased && amountMl ? Number(amountMl) || null : null,
             duration_minutes:
-              !isFormula && durationMinutes
+              !isAmountBased && durationMinutes
                 ? Number(durationMinutes) || null
                 : null,
             diaper_kind: null,
@@ -530,10 +532,21 @@ export default function AdminPage() {
                     >
                       Krūtimi (min)
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setFeedingMethod("pumped")}
+                      className={`flex-1 rounded-xl px-2 py-1.5 text-[11px] font-medium ${
+                        feedingMethod === "pumped"
+                          ? "bg-sky-600 text-white shadow-sm"
+                          : "text-slate-600"
+                      }`}
+                    >
+                      Mamos pienas (ml)
+                    </button>
                   </div>
                 </div>
 
-                {feedingMethod === "formula" ? (
+                {feedingMethod === "formula" || feedingMethod === "pumped" ? (
                   <div className="space-y-1.5">
                     <label className="block text-[11px] font-medium text-slate-600">
                       Kiekis (ml)
@@ -701,12 +714,10 @@ export default function AdminPage() {
                               <span className="whitespace-normal break-words">
                                 {e.type === "feeding" &&
                                   (e.feedingMethod === "formula"
-                                    ? `Mišinėlis ${
-                                        e.amountMl ?? 0
-                                      } ml`
-                                    : `Krūtimi ${
-                                        e.durationMinutes ?? 0
-                                      } min`)}
+                                    ? `Mišinėlis ${(e.amountMl ?? 0)} ml`
+                                    : e.feedingMethod === "pumped"
+                                    ? `Mamos pienas ${(e.amountMl ?? 0)} ml`
+                                    : `Krūtimi ${(e.durationMinutes ?? 0)} min`)}
                                 {e.type === "diaper" &&
                                   `Sauskel. ${
                                     e.diaperKind === "wet"

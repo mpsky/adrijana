@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-type FeedingMethod = "breast" | "formula";
+type FeedingMethod = "breast" | "formula" | "pumped";
 type DiaperKind = "wet" | "dirty" | "both";
 
 type FeedingEvent = {
@@ -183,6 +183,10 @@ export default function ArchivePage() {
                               {e.type === "feeding"
                                 ? e.feedingMethod === "breast"
                                   ? "Krūtimi"
+                                  : e.feedingMethod === "pumped"
+                                  ? `Mamos pienas${
+                                      e.amountMl ? ` ${e.amountMl} ml` : ""
+                                    }`
                                   : `Mišinėlis${
                                       e.amountMl &&
                                       e.feedingMethod === "formula"
