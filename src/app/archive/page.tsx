@@ -166,73 +166,66 @@ export default function ArchivePage() {
                         className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-xs shadow-sm"
                       >
                         <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                e.type === "feeding"
-                                  ? "bg-sky-100 text-sky-700"
-                                  : e.type === "diaper"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-purple-100 text-purple-700"
-                              }`}
-                            >
+                          <p className="text-[11px] font-medium text-slate-800">
+                            <span className="font-mono">
+                              {formatTimeLabel(e.time)}
+                            </span>
+                            {" | "}
+                            <span>
                               {e.type === "feeding"
                                 ? "Maitinimas"
                                 : e.type === "diaper"
-                                ? "Sauskelnių"
+                                ? "Sauskelnių keitimas"
                                 : "Miegas"}
                             </span>
-                            <span className="text-[10px] text-slate-500">
-                              {formatTimeLabel(e.time)}
-                            </span>
-                          </div>
-                          {e.type === "feeding" ? (
-                            <p className="text-[11px] text-slate-700">
-                              {e.feedingMethod === "breast"
-                                ? "Krūtimi"
-                                : "Mišinėlis"}
-                              {e.amountMl && e.feedingMethod === "formula"
-                                ? ` • ${e.amountMl} ml`
-                                : null}
-                              {e.feedingMethod === "breast" &&
-                              e.durationMinutes != null ? (
-                                <>
-                                  {" "}
-                                  •{" "}
-                                  {formatTimeLabel(e.time)}–
-                                  {formatTimeLabel(
-                                    new Date(
-                                      new Date(e.time).getTime() +
-                                        e.durationMinutes * 60000
-                                    ).toISOString()
-                                  )}{" "}
-                                  ({e.durationMinutes} min)
-                                </>
-                              ) : null}
-                            </p>
-                          ) : e.type === "diaper" ? (
-                            <p className="text-[11px] text-slate-700">
-                              {e.diaperKind === "wet" && "Šlapias"}
-                              {e.diaperKind === "dirty" && "Purvinas"}
-                              {e.diaperKind === "both" &&
-                                "Šlapias ir purvinas"}
-                            </p>
-                          ) : (
-                            <p className="text-[11px] text-slate-700">
-                              {e.sleepEnd
-                                ? `Miegas ${formatTimeLabel(
+                            {" | "}
+                            <span>
+                              {e.type === "feeding"
+                                ? e.feedingMethod === "breast"
+                                  ? "Krūtimi"
+                                  : `Mišinėlis${
+                                      e.amountMl &&
+                                      e.feedingMethod === "formula"
+                                        ? ` ${e.amountMl} ml`
+                                        : ""
+                                    }`
+                                : e.type === "diaper"
+                                ? e.diaperKind === "wet"
+                                  ? "Šlapias"
+                                  : e.diaperKind === "dirty"
+                                  ? "Purvinas"
+                                  : "Šlapias ir purvinas"
+                                : e.sleepEnd
+                                ? `nuo ${formatTimeLabel(
                                     e.time
-                                  )}–${formatTimeLabel(e.sleepEnd)} (${Math.max(
+                                  )} iki ${formatTimeLabel(e.sleepEnd)}`
+                                : `nuo ${formatTimeLabel(e.time)} (vyksta)`}
+                            </span>
+                            {e.type === "feeding" &&
+                              e.feedingMethod === "breast" &&
+                              e.durationMinutes != null && (
+                                <>
+                                  {" | "}
+                                  <span>{e.durationMinutes} min</span>
+                                </>
+                              )}
+                            {e.type === "sleep" && e.sleepEnd && (
+                              <>
+                                {" | "}
+                                <span>
+                                  {Math.max(
                                     0,
                                     Math.round(
                                       (new Date(e.sleepEnd).getTime() -
                                         new Date(e.time).getTime()) /
                                         60000
                                     )
-                                  )} min)`
-                                : `Miegas nuo ${formatTimeLabel(e.time)} (vyksta)`}
-                            </p>
-                          )}
+                                  )}{" "}
+                                  min
+                                </span>
+                              </>
+                            )}
+                          </p>
                         </div>
                       </div>
                     ))}
