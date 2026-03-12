@@ -648,7 +648,33 @@ export default function Home() {
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+            {/* Mobile: viskas vienoje eilutėje */}
+            <div className="block w-full sm:hidden">
+              <span className="inline-flex w-full items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-[11px] text-slate-700 ring-1 ring-sky-100">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-3 w-3"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M12 3.5a3.5 3.5 0 1 1-3.5 3.5A3.5 3.5 0 0 1 12 3.5Zm0 7a5.5 5.5 0 0 0-5.5 5.5v.75A1.25 1.25 0 0 0 7.75 18h8.5A1.25 1.25 0 0 0 17.5 16.75V16a5.5 5.5 0 0 0-5.5-5.5Z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </span>
+                <span className="flex-1 truncate">
+                  <span className="font-semibold">{BABY_NAME}</span>
+                  <span className="mx-1.5">•</span>
+                  <span>gim. 2026-03-04 14:28</span>
+                  <span className="mx-1.5">•</span>
+                  <span>amžius {babyAgeLabel}</span>
+                </span>
+              </span>
+            </div>
+
+            {/* Desktop: atskiros ženkliukų kapsulės */}
+            <div className="hidden flex-wrap items-center gap-2 text-xs sm:flex sm:text-sm">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-slate-700 ring-1 ring-sky-100">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
                   <svg
@@ -709,12 +735,21 @@ export default function Home() {
                 <span>amžius {babyAgeLabel}</span>
               </span>
             </div>
-            {isLoading && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
-                Kraunami įrašai...
-              </span>
-            )}
+
+            <div className="flex items-center gap-2">
+              <a
+                href="/admin"
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm transition hover:bg-slate-800"
+              >
+                NUSTATYMAI
+              </a>
+              {isLoading && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
+                  Kraunami įrašai...
+                </span>
+              )}
+            </div>
           </div>
         </section>
 
@@ -1281,16 +1316,6 @@ export default function Home() {
                           <span className="text-[11px] text-slate-500">
                             {formatTimeLabel(e.time)}
                           </span>
-                          {(e.type === "feeding" && e.feedingMethod === "formula") ||
-                          e.type === "diaper" ? (
-                            <button
-                              type="button"
-                              onClick={() => startEdit(e)}
-                              className="ml-1 text-[10px] text-sky-600 hover:text-sky-800"
-                            >
-                              Redaguoti
-                            </button>
-                          ) : null}
                         </div>
 
                         {e.type === "feeding" ? (
