@@ -209,7 +209,7 @@ export default function Home() {
   const [now, setNow] = useState<Date>(new Date());
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
+    const id = setInterval(() => setNow(new Date()), 1_000);
     return () => clearInterval(id);
   }, []);
 
@@ -218,21 +218,27 @@ export default function Home() {
     if (Number.isNaN(birth.getTime())) return "";
 
     const diffMs = now.getTime() - birth.getTime();
-    if (diffMs <= 0) return "0 d.";
+    if (diffMs <= 0) return "0 d. 0 val. 0 s.";
 
-    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const totalHours = Math.floor(totalMinutes / 60);
     const totalDays = Math.floor(totalHours / 24);
     const years = Math.floor(totalDays / 365);
     const remainingDaysAfterYears = totalDays - years * 365;
     const months = Math.floor(remainingDaysAfterYears / 30);
     const days = remainingDaysAfterYears - months * 30;
     const hours = totalHours - totalDays * 24;
+    const minutes = totalMinutes - totalHours * 60;
+    const seconds = totalSeconds - totalMinutes * 60;
 
     const parts: string[] = [];
     if (years > 0) parts.push(`${years} m.`);
     if (months > 0) parts.push(`${months} mėn.`);
     if (days > 0 || parts.length === 0) parts.push(`${days} d.`);
     if (hours > 0) parts.push(`${hours} val.`);
+    if (minutes > 0) parts.push(`${minutes} min.`);
+    parts.push(`${seconds} s.`);
     return parts.join(" ");
   }, [now]);
 
@@ -648,7 +654,7 @@ export default function Home() {
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Mobile: viskas vienoje eilutėje */}
+            {/* Mobile: gimimo data ir amžius vienoje kapsulėje */}
             <div className="block w-full sm:hidden">
               <span className="inline-flex w-full items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-[11px] text-slate-700 ring-1 ring-sky-100">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
@@ -658,14 +664,18 @@ export default function Home() {
                     aria-hidden="true"
                   >
                     <path
-                      d="M12 3.5a3.5 3.5 0 1 1-3.5 3.5A3.5 3.5 0 0 1 12 3.5Zm0 7a5.5 5.5 0 0 0-5.5 5.5v.75A1.25 1.25 0 0 0 7.75 18h8.5A1.25 1.25 0 0 0 17.5 16.75V16a5.5 5.5 0 0 0-5.5-5.5Z"
+                      d="M7 4.5A2.5 2.5 0 0 1 9.5 2h5A2.5 2.5 0 0 1 17 4.5V6h1.5A1.5 1.5 0 0 1 20 7.5v11A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H7Z"
                       fill="currentColor"
+                    />
+                    <path
+                      d="M9 3.5h6M8 10h8"
+                      stroke="#e5e7eb"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
                     />
                   </svg>
                 </span>
                 <span className="flex-1 truncate">
-                  <span className="font-semibold">{BABY_NAME}</span>
-                  <span className="mx-1.5">•</span>
                   <span>gim. 2026-03-04 14:28</span>
                   <span className="mx-1.5">•</span>
                   <span>amžius {babyAgeLabel}</span>
@@ -673,23 +683,8 @@ export default function Home() {
               </span>
             </div>
 
-            {/* Desktop: atskiros ženkliukų kapsulės */}
+            {/* Desktop: atskiros gimimo datos ir amžiaus kapsulės */}
             <div className="hidden flex-wrap items-center gap-2 text-xs sm:flex sm:text-sm">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-slate-700 ring-1 ring-sky-100">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-3 w-3"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M12 3.5a3.5 3.5 0 1 1-3.5 3.5A3.5 3.5 0 0 1 12 3.5Zm0 7a5.5 5.5 0 0 0-5.5 5.5v.75A1.25 1.25 0 0 0 7.75 18h8.5A1.25 1.25 0 0 0 17.5 16.75V16a5.5 5.5 0 0 0-5.5-5.5Z"
-                      fill="currentColor"
-                    />
-                  </svg>
-                </span>
-                <span className="font-semibold">{BABY_NAME}</span>
-              </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1 text-slate-600 ring-1 ring-slate-100">
                 <svg
                   viewBox="0 0 24 24"
@@ -736,20 +731,14 @@ export default function Home() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <a
-                href="/admin"
-                className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm transition hover:bg-slate-800"
-              >
-                NUSTATYMAI
-              </a>
-              {isLoading && (
+            {isLoading && (
+              <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
                   Kraunami įrašai...
                 </span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -1032,27 +1021,30 @@ export default function Home() {
                     </div>
                   )}
                   {feedingMethod === "breast" && activeBreastFeeding && (
-                    <div className="space-y-1">
-                      <p className="text-[11px] font-medium text-slate-600">
-                        Žindymo trukmė
-                      </p>
-                      <p className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
-                        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-sky-200">
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-700" />
+                    <div className="space-y-1 text-center">
+                      <div className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 ring-1 ring-sky-200">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-200">
+                          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-700" />
                         </span>
-                        <span>
-                          Žindoma{" "}
-                          {Math.max(
-                            0,
-                            Math.round(
-                              (now.getTime() -
-                                new Date(activeBreastFeeding.time).getTime()) /
-                                60000
-                            )
-                          )}{" "}
-                          min
+                        <span className="font-mono">
+                          {(() => {
+                            const diffMs =
+                              now.getTime() -
+                              new Date(activeBreastFeeding.time).getTime();
+                            const totalSeconds = Math.max(
+                              0,
+                              Math.floor(diffMs / 1000)
+                            );
+                            const minutes = Math.floor(totalSeconds / 60);
+                            const seconds = totalSeconds - minutes * 60;
+                            return `${minutes
+                              .toString()
+                              .padStart(2, "0")}:${seconds
+                              .toString()
+                              .padStart(2, "0")} min`;
+                          })()}
                         </span>
-                      </p>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1209,22 +1201,31 @@ export default function Home() {
                   Paspausk, kai kūdikis užmiega, ir dar kartą – kai prabunda.
                 </p>
                 {activeSleep && (
-                  <p className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-1 text-[11px] font-medium text-purple-700 ring-1 ring-purple-100">
-                    <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-purple-200">
-                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-700" />
-                    </span>
-                    <span>
-                      Miegas tęsiasi{" "}
-                      {Math.max(
-                        0,
-                        Math.round(
-                          (now.getTime() - new Date(activeSleep.time).getTime()) /
-                            60000
-                        )
-                      )}{" "}
-                      min
-                    </span>
-                  </p>
+                  <div className="text-center">
+                    <div className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-800 ring-1 ring-purple-200">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-200">
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-purple-700" />
+                      </span>
+                      <span className="font-mono">
+                        {(() => {
+                          const diffMs =
+                            now.getTime() -
+                            new Date(activeSleep.time).getTime();
+                          const totalSeconds = Math.max(
+                            0,
+                            Math.floor(diffMs / 1000)
+                          );
+                          const minutes = Math.floor(totalSeconds / 60);
+                          const seconds = totalSeconds - minutes * 60;
+                          return `${minutes
+                            .toString()
+                            .padStart(2, "0")}:${seconds
+                            .toString()
+                            .padStart(2, "0")} min`;
+                        })()}
+                      </span>
+                    </div>
+                  </div>
                 )}
                 <button
                   type="button"
@@ -1261,28 +1262,36 @@ export default function Home() {
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                   Šiandienos įrašai
                 </p>
-                <Link
-                  href="/archive"
-                  className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700 shadow-sm transition hover:bg-sky-600 hover:text-white"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-3.5 w-3.5"
-                    aria-hidden="true"
+                <div className="flex items-center gap-2">
+                  <Link
+                    href="/archive"
+                    className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700 shadow-sm transition hover:bg-sky-600 hover:text-white"
                   >
-                    <path
-                      d="M6 5.5A1.5 1.5 0 0 1 7.5 4h9A1.5 1.5 0 0 1 18 5.5V17a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2Z"
-                      fill="currentColor"
-                    />
-                    <path
-                      d="M9 8h6M9 11h3"
-                      stroke="#e5f0ff"
-                      strokeWidth="1.4"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  ARCHYVAS
-                </Link>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-3.5 w-3.5"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M6 5.5A1.5 1.5 0 0 1 7.5 4h9A1.5 1.5 0 0 1 18 5.5V17a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2Z"
+                        fill="currentColor"
+                      />
+                      <path
+                        d="M9 8h6M9 11h3"
+                        stroke="#e5f0ff"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    ARCHYVAS
+                  </Link>
+                  <a
+                    href="/admin"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white shadow-sm transition hover:bg-slate-800"
+                  >
+                    NUSTATYMAI
+                  </a>
+                </div>
               </div>
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {todayEvents.length === 0 ? (
