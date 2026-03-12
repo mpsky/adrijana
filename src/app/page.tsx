@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -37,9 +38,16 @@ type SleepEvent = {
 
 type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
 
+const BABY_NAME = "Ardijana";
+const BABY_BIRTH_ISO = "2026-03-04T14:28:00";
+
 function formatTimeLabel(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString("lt-LT", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
 function isToday(iso: string) {
@@ -57,29 +65,19 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const [babyName, setBabyName] = useState<string>("");
-  const [babyBirthdate, setBabyBirthdate] = useState<string>("");
-  const [isSavingBaby, setIsSavingBaby] = useState<boolean>(false);
   const [feedingMethod, setFeedingMethod] = useState<FeedingMethod>("breast");
   const [amountMl, setAmountMl] = useState<string>("");
   const [durationMinutes, setDurationMinutes] = useState<string>("");
   const [diaperKind, setDiaperKind] = useState<DiaperKind>("wet");
-  const [feedingNotes, setFeedingNotes] = useState<string>("");
-  const [diaperNotes, setDiaperNotes] = useState<string>("");
-  const [sleepNotes, setSleepNotes] = useState<string>("");
 
   useEffect(() => {
     async function loadInitialData() {
       setIsLoading(true);
 
-      const [{ data: eventsData, error: eventsError }, { data: babyData }] =
-        await Promise.all([
-          supabase
-            .from("events")
-            .select("*")
-            .order("time", { ascending: false }),
-          supabase.from("baby_profile").select("*").limit(1),
-        ]);
+      const { data: eventsData, error: eventsError } = await supabase
+        .from("events")
+        .select("*")
+        .order("time", { ascending: false });
 
       if (!eventsError && eventsData) {
         const mapped: BabyEvent[] = (eventsData as any[]).map((row) => {
@@ -117,14 +115,6 @@ export default function Home() {
           return sleep;
         });
         setEvents(mapped);
-      }
-
-      if (babyData && babyData.length > 0) {
-        const profile = babyData[0] as { name?: string; birthdate?: string };
-        setBabyName(profile.name ?? "");
-        if (profile.birthdate) {
-          setBabyBirthdate(profile.birthdate);
-        }
       }
 
       setIsLoading(false);
@@ -209,8 +199,7 @@ export default function Home() {
   }, []);
 
   const babyAgeLabel = useMemo(() => {
-    if (!babyBirthdate) return "";
-    const birth = new Date(babyBirthdate);
+    const birth = new Date(BABY_BIRTH_ISO);
     if (Number.isNaN(birth.getTime())) return "";
 
     const diffMs = now.getTime() - birth.getTime();
@@ -227,7 +216,7 @@ export default function Home() {
     if (months > 0) parts.push(`${months} mėn.`);
     if (days > 0 || parts.length === 0) parts.push(`${days} d.`);
     return parts.join(" ");
-  }, [babyBirthdate, now]);
+  }, [now]);
 
   const archiveByDay = useMemo(() => {
     const groups: Record<string, BabyEvent[]> = {};
@@ -243,32 +232,13 @@ export default function Home() {
     return entries;
   }, [events]);
 
-  async function handleSaveBabyProfile() {
-    if (!babyName.trim() || !babyBirthdate) return;
-    setIsSavingBaby(true);
-
-    const { data: existing } = await supabase
-      .from("baby_profile")
-      .select("*")
-      .limit(1);
-
-    if (existing && existing.length > 0) {
-      await supabase
-        .from("baby_profile")
-        .update({
-          name: babyName.trim(),
-          birthdate: babyBirthdate,
-        })
-        .eq("id", existing[0].id);
-    } else {
-      await supabase.from("baby_profile").insert({
-        name: babyName.trim(),
-        birthdate: babyBirthdate,
-      });
-    }
-
-    setIsSavingBaby(false);
-  }
+  const activeSleep = useMemo(
+    () =>
+      events.find(
+        (e) => e.type === "sleep" && !e.sleepEnd
+      ) as SleepEvent | undefined,
+    [events]
+  );
 
   async function handleAddEvent(targetType: EventType) {
     const nowIso = new Date().toISOString();
@@ -283,7 +253,7 @@ export default function Home() {
         const payload = {
           type: "sleep",
           time: nowIso,
-          notes: sleepNotes || null,
+          notes: null,
           sleep_end: null,
           feeding_method: null,
           amount_ml: null,
@@ -308,7 +278,6 @@ export default function Home() {
           setEvents((prev) => [newEvent, ...prev]);
         }
 
-        setSleepNotes("");
         setIsSaving(false);
         return;
       }
@@ -344,12 +313,10 @@ export default function Home() {
       const payload = {
         type: "feeding",
         time: nowIso,
-          notes: feedingNotes || null,
+        notes: null,
         feeding_method: feedingMethod,
         amount_ml:
-          isFormula && amountMl
-            ? Number(amountMl) || null
-            : null,
+          isFormula && amountMl ? Number(amountMl) || null : null,
         duration_minutes:
           isBreast && durationMinutes
             ? Number(durationMinutes) || null
@@ -379,7 +346,7 @@ export default function Home() {
       const payload = {
         type: "diaper",
         time: nowIso,
-        notes: diaperNotes || null,
+        notes: null,
         diaper_kind: diaperKind,
         feeding_method: null,
         amount_ml: null,
@@ -404,9 +371,6 @@ export default function Home() {
       }
     }
 
-    setFeedingNotes("");
-    setDiaperNotes("");
-    // sleepNotes valome tik kai kuriame / užbaigiame miegą
     setAmountMl("");
     setDurationMinutes("");
     setIsSaving(false);
@@ -427,11 +391,11 @@ export default function Home() {
   return (
     <div className="min-h-screen text-slate-900">
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
-        <section className="rounded-3xl bg-white/95 px-4 py-3 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:px-5 sm:py-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div className="space-y-2">
-              <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-50 text-sky-600 ring-1 ring-sky-100">
+        <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-slate-700 ring-1 ring-sky-100">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
                   <svg
                     viewBox="0 0 24 24"
                     className="h-3 w-3"
@@ -443,94 +407,63 @@ export default function Home() {
                     />
                   </svg>
                 </span>
-                <span>Kūdikio profilis</span>
-              </p>
-              <div className="grid gap-2 sm:grid-cols-[2fr,1.5fr]">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    Vardas
-                  </label>
-                  <input
-                    type="text"
-                    value={babyName}
-                    onChange={(e) => setBabyName(e.target.value)}
-                    placeholder="pvz. Emilija"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                <span className="font-semibold">{BABY_NAME}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1 text-slate-600 ring-1 ring-slate-100">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M7 4.5A2.5 2.5 0 0 1 9.5 2h5A2.5 2.5 0 0 1 17 4.5V6h1.5A1.5 1.5 0 0 1 20 7.5v11A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H7Z"
+                    fill="currentColor"
+                    opacity="0.9"
                   />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    Gimimo data
-                  </label>
-                  <input
-                    type="date"
-                    value={babyBirthdate}
-                    onChange={(e) => setBabyBirthdate(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                  <path
+                    d="M9 3.5h6M8 10h8"
+                    stroke="#e5e7eb"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
                   />
-                </div>
-              </div>
+                </svg>
+                <span>gim. 2026-03-04 14:28</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-indigo-700 ring-1 ring-indigo-100">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-3.5 w-3.5"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M12 4a8 8 0 1 1-8 8"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M12 4v5.5l3 2"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <span>amžius {babyAgeLabel}</span>
+              </span>
             </div>
-            <div className="flex flex-col items-start gap-2 sm:items-end">
-              <div className="rounded-2xl bg-sky-50 px-3 py-2 text-xs text-sky-800 ring-1 ring-sky-100">
-                <p className="font-medium">
-                  Amžius{" "}
-                  <span className="ml-1 font-semibold">
-                    {babyAgeLabel || "—"}
-                  </span>
-                </p>
-                <p className="text-[11px] text-sky-700/70">
-                  Atnaujinama automatiškai pagal gimimo datą
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleSaveBabyProfile}
-                disabled={isSavingBaby || !babyName.trim() || !babyBirthdate}
-                className="inline-flex items-center justify-center rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isSavingBaby ? (
-                  <>
-                    <span className="mr-1.5 h-3 w-3 animate-spin rounded-full border border-white/60 border-b-transparent" />
-                    Saugoma...
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="mr-1.5 h-3.5 w-3.5"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M6 7.5A2.5 2.5 0 0 1 8.5 5h7A2.5 2.5 0 0 1 18 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 6 16.5Z"
-                        fill="currentColor"
-                        opacity="0.9"
-                      />
-                      <path
-                        d="M9 8h6M9 11h3"
-                        stroke="#e5f3ff"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    Išsaugoti profilį
-                  </>
-                )}
-              </button>
-            </div>
+            {isLoading && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
+                Kraunami įrašai...
+              </span>
+            )}
           </div>
         </section>
 
         <section className="space-y-3">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold tracking-wide text-slate-700">
-              Šiandienos ir bendras vaizdas
-            </h2>
-            <p className="text-[11px] text-slate-500">
-              Greita apžvalga – maitinimai, sauskelnės ir miegas
-            </p>
-          </div>
-
           <div className="grid gap-3 sm:grid-cols-3">
             {/* Šiandien – maitinimas ir miegas */}
             <div className="rounded-2xl bg-white/90 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
@@ -680,7 +613,7 @@ export default function Home() {
                   </span>
                 </p>
                 <p className="flex items-center justify-between text-slate-300">
-                  <span>Sauskelnių keitimai</span>
+                  <span>Sauskelnių</span>
                   <span className="font-semibold text-emerald-200">
                     {stats.totalDiapers}
                   </span>
@@ -743,7 +676,7 @@ export default function Home() {
           <div className="grid gap-4 lg:grid-cols-[2fr,3fr]">
             <div className="grid gap-4 sm:grid-cols-3">
               {/* Maitinimas */}
-              <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 shadow-sm">
+              <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 shadow-sm">
                 <div className="flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-sky-700">
                     <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
@@ -792,78 +725,66 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
-                  <div className="grid gap-2">
-                    {feedingMethod === "formula" && (
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-medium text-slate-600">
-                          Kiekis (ml)
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={amountMl}
-                          onChange={(e) => setAmountMl(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                          placeholder="pvz. 90"
-                        />
-                      </div>
-                    )}
-                    {feedingMethod === "breast" && (
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-medium text-slate-600">
-                          Trukmė (min)
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={durationMinutes}
-                          onChange={(e) => setDurationMinutes(e.target.value)}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                          placeholder="pvz. 15"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-medium text-slate-600">
-                      Pastaba (nebūtina)
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={feedingNotes}
-                      onChange={(e) => setFeedingNotes(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                      placeholder="pvz. valgė ramiai..."
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAddEvent("feeding")}
-                  disabled={isSaving}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {isSaving ? (
-                    <>
-                      <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
-                      Saugoma...
-                    </>
-                  ) : (
-                    <>
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="mr-1.5 h-3.5 w-3.5"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M5 12.5A2.5 2.5 0 0 1 7.5 10H11V5.5A2.5 2.5 0 0 1 13.5 3h.5A2.5 2.5 0 0 1 16.5 5.5V10H19a2.5 2.5 0 0 1 0 5h-2.5V18.5A2.5 2.5 0 0 1 14 21h-.5A2.5 2.5 0 0 1 11 18.5V15H7.5A2.5 2.5 0 0 1 5 12.5Z"
-                          fill="currentColor"
-                        />
-                      </svg>
-                      Išsaugoti maitinimą
-                    </>
+                <div className="grid gap-2">
+                  {feedingMethod === "formula" && (
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-slate-600">
+                        Kiekis (ml)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={amountMl}
+                        onChange={(e) => setAmountMl(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                        placeholder="pvz. 90"
+                      />
+                    </div>
                   )}
-                </button>
+                  {feedingMethod === "breast" && (
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-slate-600">
+                        Trukmė (min)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={durationMinutes}
+                        onChange={(e) => setDurationMinutes(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                        placeholder="pvz. 15"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleAddEvent("feeding")}
+                disabled={isSaving}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isSaving ? (
+                  <>
+                    <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
+                    Saugoma...
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="mr-1.5 h-3.5 w-3.5"
+                      aria-hidden="true"
+                    >
+                      <path
+                        d="M5 12.5A2.5 2.5 0 0 1 7.5 10H11V5.5A2.5 2.5 0 0 1 13.5 3h.5A2.5 2.5 0 0 1 16.5 5.5V10H19a2.5 2.5 0 0 1 0 5h-2.5V18.5A2.5 2.5 0 0 1 14 21h-.5A2.5 2.5 0 0 1 11 18.5V15H7.5A2.5 2.5 0 0 1 5 12.5Z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    Išsaugoti maitinimą
+                  </>
+                )}
+              </button>
               </div>
 
             {/* Sauskelnių keitimas */}
@@ -891,14 +812,14 @@ export default function Home() {
                   <p className="text-[11px] font-medium text-slate-600">
                     Sauskelnių tipas
                   </p>
-                  <div className="grid grid-cols-3 gap-2 text-[11px] font-medium">
+                  <div className="inline-flex rounded-full bg-slate-100 p-1 text-[11px] font-medium">
                     <button
                       type="button"
                       onClick={() => setDiaperKind("wet")}
                       className={`rounded-full px-3 py-2 transition ${
                         diaperKind === "wet"
                           ? "bg-sky-600 text-white shadow-sm"
-                          : "bg-white text-slate-700 hover:bg-slate-100"
+                          : "text-slate-700 hover:text-slate-900"
                       }`}
                     >
                       Šlapias
@@ -909,7 +830,7 @@ export default function Home() {
                       className={`rounded-full px-3 py-2 transition ${
                         diaperKind === "dirty"
                           ? "bg-sky-600 text-white shadow-sm"
-                          : "bg-white text-slate-700 hover:bg-slate-100"
+                          : "text-slate-700 hover:text-slate-900"
                       }`}
                     >
                       Purvinas
@@ -920,24 +841,12 @@ export default function Home() {
                       className={`rounded-full px-3 py-2 transition ${
                         diaperKind === "both"
                           ? "bg-sky-600 text-white shadow-sm"
-                          : "bg-white text-slate-700 hover:bg-slate-100"
+                          : "text-slate-700 hover:text-slate-900"
                       }`}
                     >
                       Abu
                     </button>
                   </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    Pastaba (nebūtina)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={diaperNotes}
-                    onChange={(e) => setDiaperNotes(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                    placeholder="pvz. paraudusi oda..."
-                  />
                 </div>
               </div>
               <button
@@ -992,18 +901,24 @@ export default function Home() {
                 <p className="text-[11px] text-slate-500">
                   Paspausk, kai kūdikis užmiega, ir dar kartą – kai prabunda.
                 </p>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-slate-600">
-                    Pastaba (nebūtina)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={sleepNotes}
-                    onChange={(e) => setSleepNotes(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-purple-400 focus:ring-2 focus:ring-purple-100"
-                    placeholder="pvz. neramus miegas..."
-                  />
-                </div>
+                {activeSleep && (
+                  <p className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-1 text-[11px] font-medium text-purple-700 ring-1 ring-purple-100">
+                    <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-purple-200">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-purple-700" />
+                    </span>
+                    <span>
+                      Miegas tęsiasi{" "}
+                      {Math.max(
+                        0,
+                        Math.round(
+                          (now.getTime() - new Date(activeSleep.time).getTime()) /
+                            60000
+                        )
+                      )}{" "}
+                      min
+                    </span>
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => handleAddEvent("sleep")}
@@ -1035,9 +950,33 @@ export default function Home() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Šiandienos įrašai
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Šiandienos įrašai
+                </p>
+                <Link
+                  href="/archive"
+                  className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700 shadow-sm transition hover:bg-sky-600 hover:text-white"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-3.5 w-3.5"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M6 5.5A1.5 1.5 0 0 1 7.5 4h9A1.5 1.5 0 0 1 18 5.5V17a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2Z"
+                      fill="currentColor"
+                    />
+                    <path
+                      d="M9 8h6M9 11h3"
+                      stroke="#e5f0ff"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  ARCHYVAS
+                </Link>
+              </div>
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {todayEvents.length === 0 ? (
                   <p className="text-sm text-slate-500">
@@ -1109,100 +1048,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold tracking-wide text-slate-700">
-              Archyvas
-            </h2>
-            <p className="text-[11px] text-slate-500">
-              Visi įrašai, sugrupuoti pagal dienas
-            </p>
-          </div>
-          <div className="mt-3 max-h-80 space-y-3 overflow-y-auto pr-1 text-sm">
-            {archiveByDay.length === 0 ? (
-              <p className="text-slate-500">
-                Įrašų dar nėra – pradėk nuo pirmojo maitinimo, sauskelnių
-                keitimo ar miego.
-              </p>
-            ) : (
-              archiveByDay.map(([date, dayEvents]) => (
-                <div key={date} className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
-                    <span className="h-px w-4 rounded-full bg-slate-200" />
-                    <span>
-                      {new Date(date).toLocaleDateString("lt-LT", {
-                        year: "numeric",
-                        month: "short",
-                        day: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  <div className="space-y-1.5">
-                    {dayEvents.map((e) => (
-                      <div
-                        key={e.id}
-                        className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-xs shadow-sm"
-                      >
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                e.type === "feeding"
-                                  ? "bg-sky-100 text-sky-700"
-                                  : e.type === "diaper"
-                                  ? "bg-emerald-100 text-emerald-700"
-                                  : "bg-purple-100 text-purple-700"
-                              }`}
-                            >
-                              {e.type === "feeding"
-                                ? "Maitinimas"
-                                : e.type === "diaper"
-                                ? "Sauskelnių keitimas"
-                                : "Miegas"}
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                              {formatTimeLabel(e.time)}
-                            </span>
-                          </div>
-                          {e.type === "feeding" ? (
-                            <p className="text-[11px] text-slate-700">
-                              {e.feedingMethod === "breast"
-                                ? "Krūtimi"
-                                : "Mišinėlis"}
-                              {e.amountMl ? ` • ${e.amountMl} ml` : null}
-                              {e.durationMinutes
-                                ? ` • ${e.durationMinutes} min`
-                                : null}
-                            </p>
-                          ) : e.type === "diaper" ? (
-                            <p className="text-[11px] text-slate-700">
-                              {e.diaperKind === "wet" && "Šlapias"}
-                              {e.diaperKind === "dirty" && "Purvinas"}
-                              {e.diaperKind === "both" &&
-                                "Šlapias ir purvinas"}
-                            </p>
-                          ) : (
-                            <p className="text-[11px] text-slate-700">
-                              Miegas nuo {formatTimeLabel(e.time)}
-                              {e.sleepEnd
-                                ? ` iki ${formatTimeLabel(e.sleepEnd)}`
-                                : " (vyksta)"}
-                            </p>
-                          )}
-                          {e.notes ? (
-                            <p className="text-[11px] text-slate-500">
-                              {e.notes}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
+        {/* Archyvas perkeltas į atskirą /archive puslapį */}
       </main>
     </div>
   );
