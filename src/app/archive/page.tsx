@@ -191,10 +191,24 @@ export default function ArchivePage() {
                               {e.feedingMethod === "breast"
                                 ? "Krūtimi"
                                 : "Mišinėlis"}
-                              {e.amountMl ? ` • ${e.amountMl} ml` : null}
-                              {e.durationMinutes
-                                ? ` • ${e.durationMinutes} min`
+                              {e.amountMl && e.feedingMethod === "formula"
+                                ? ` • ${e.amountMl} ml`
                                 : null}
+                              {e.feedingMethod === "breast" &&
+                              e.durationMinutes != null ? (
+                                <>
+                                  {" "}
+                                  •{" "}
+                                  {formatTimeLabel(e.time)}–
+                                  {formatTimeLabel(
+                                    new Date(
+                                      new Date(e.time).getTime() +
+                                        e.durationMinutes * 60000
+                                    ).toISOString()
+                                  )}{" "}
+                                  ({e.durationMinutes} min)
+                                </>
+                              ) : null}
                             </p>
                           ) : e.type === "diaper" ? (
                             <p className="text-[11px] text-slate-700">
@@ -205,10 +219,18 @@ export default function ArchivePage() {
                             </p>
                           ) : (
                             <p className="text-[11px] text-slate-700">
-                              Miegas nuo {formatTimeLabel(e.time)}
                               {e.sleepEnd
-                                ? ` iki ${formatTimeLabel(e.sleepEnd)}`
-                                : " (vyksta)"}
+                                ? `Miegas ${formatTimeLabel(
+                                    e.time
+                                  )}–${formatTimeLabel(e.sleepEnd)} (${Math.max(
+                                    0,
+                                    Math.round(
+                                      (new Date(e.sleepEnd).getTime() -
+                                        new Date(e.time).getTime()) /
+                                        60000
+                                    )
+                                  )} min)`
+                                : `Miegas nuo ${formatTimeLabel(e.time)} (vyksta)`}
                             </p>
                           )}
                         </div>

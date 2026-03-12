@@ -38,7 +38,7 @@ type SleepEvent = {
 
 type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
 
-const BABY_NAME = "Ardijana";
+const BABY_NAME = "Adrijana";
 const BABY_BIRTH_ISO = "2026-03-04T14:28:00";
 
 function formatTimeLabel(iso: string) {
@@ -65,12 +65,27 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
+  const [unlocked, setUnlocked] = useState<boolean>(false);
+  const [codeInput, setCodeInput] = useState<string>("");
+  const [codeError, setCodeError] = useState<string>("");
+
   const [feedingMethod, setFeedingMethod] = useState<FeedingMethod>("breast");
   const [amountMl, setAmountMl] = useState<string>("");
   const [durationMinutes, setDurationMinutes] = useState<string>("");
   const [diaperKind, setDiaperKind] = useState<DiaperKind>("wet");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingType, setEditingType] = useState<EventType | null>(null);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage.getItem(
+        "baby-diary-unlocked-v1"
+      );
+      if (stored === "true") {
+        setUnlocked(true);
+      }
+    }
+
     async function loadInitialData() {
       setIsLoading(true);
 
@@ -205,16 +220,19 @@ export default function Home() {
     const diffMs = now.getTime() - birth.getTime();
     if (diffMs <= 0) return "0 d.";
 
-    const totalDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const totalDays = Math.floor(totalHours / 24);
     const years = Math.floor(totalDays / 365);
     const remainingDaysAfterYears = totalDays - years * 365;
     const months = Math.floor(remainingDaysAfterYears / 30);
     const days = remainingDaysAfterYears - months * 30;
+    const hours = totalHours - totalDays * 24;
 
     const parts: string[] = [];
     if (years > 0) parts.push(`${years} m.`);
     if (months > 0) parts.push(`${months} mėn.`);
     if (days > 0 || parts.length === 0) parts.push(`${days} d.`);
+    if (hours > 0) parts.push(`${hours} val.`);
     return parts.join(" ");
   }, [now]);
 
@@ -239,6 +257,33 @@ export default function Home() {
       ) as SleepEvent | undefined,
     [events]
   );
+
+  const activeBreastFeeding = useMemo(
+    () =>
+      events.find(
+        (e) =>
+          e.type === "feeding" &&
+          e.feedingMethod === "breast" &&
+          (e as FeedingEvent).durationMinutes == null
+      ) as FeedingEvent | undefined,
+    [events]
+  );
+
+  function startEdit(event: BabyEvent) {
+    if (event.type === "feeding") {
+      setFeedingMethod(event.feedingMethod);
+      setAmountMl(event.amountMl != null ? String(event.amountMl) : "");
+      setDurationMinutes(
+        event.durationMinutes != null ? String(event.durationMinutes) : ""
+      );
+      setEditingId(event.id);
+      setEditingType("feeding");
+    } else if (event.type === "diaper") {
+      setDiaperKind(event.diaperKind);
+      setEditingId(event.id);
+      setEditingType("diaper");
+    }
+  }
 
   async function handleAddEvent(targetType: EventType) {
     const nowIso = new Date().toISOString();
@@ -310,37 +355,133 @@ export default function Home() {
       const isFormula = feedingMethod === "formula";
       const isBreast = feedingMethod === "breast";
 
-      const payload = {
-        type: "feeding",
-        time: nowIso,
-        notes: null,
-        feeding_method: feedingMethod,
-        amount_ml:
-          isFormula && amountMl ? Number(amountMl) || null : null,
-        duration_minutes:
-          isBreast && durationMinutes
-            ? Number(durationMinutes) || null
-            : null,
-        diaper_kind: null,
-      };
+      if (isBreast) {
+        const active = activeBreastFeeding;
 
-      const { data, error } = await supabase
-        .from("events")
-        .insert(payload)
-        .select("*")
-        .single();
+        if (!active) {
+          const startPayload = {
+            type: "feeding",
+            time: nowIso,
+            notes: null,
+            feeding_method: "breast" as FeedingMethod,
+            amount_ml: null,
+            duration_minutes: null,
+            diaper_kind: null,
+          };
 
-      if (!error && data) {
-        const newEvent: FeedingEvent = {
-          id: data.id,
+          const { data, error } = await supabase
+            .from("events")
+            .insert(startPayload)
+            .select("*")
+            .single();
+
+          if (!error && data) {
+            const newEvent: FeedingEvent = {
+              id: data.id,
+              type: "feeding",
+              time: data.time,
+              notes: data.notes ?? undefined,
+              feedingMethod: data.feeding_method,
+              amountMl: data.amount_ml ?? undefined,
+              durationMinutes: data.duration_minutes ?? undefined,
+            };
+            setEvents((prev) => [newEvent, ...prev]);
+          }
+        } else {
+          const startTime = new Date(active.time).getTime();
+          const minutes = Math.max(
+            0,
+            Math.round((new Date(nowIso).getTime() - startTime) / 60000)
+          );
+
+          const { data, error } = await supabase
+            .from("events")
+            .update({
+              duration_minutes: minutes,
+            })
+            .eq("id", active.id)
+            .select("*")
+            .single();
+
+          if (!error && data) {
+            const updated: FeedingEvent = {
+              id: data.id,
+              type: "feeding",
+              time: data.time,
+              notes: data.notes ?? undefined,
+              feedingMethod: data.feeding_method,
+              amountMl: data.amount_ml ?? undefined,
+              durationMinutes: data.duration_minutes ?? undefined,
+            };
+            setEvents((prev) =>
+              prev.map((e) => (e.id === updated.id ? updated : e))
+            );
+          }
+        }
+      } else {
+        const payload = {
           type: "feeding",
-          time: data.time,
-          notes: data.notes ?? undefined,
-          feedingMethod: data.feeding_method,
-          amountMl: data.amount_ml ?? undefined,
-          durationMinutes: data.duration_minutes ?? undefined,
+          time: nowIso,
+          notes: null,
+          feeding_method: feedingMethod,
+          amount_ml:
+            isFormula && amountMl ? Number(amountMl) || null : null,
+          duration_minutes:
+            isFormula && durationMinutes
+              ? Number(durationMinutes) || null
+              : null,
+          diaper_kind: null,
         };
-        setEvents((prev) => [newEvent, ...prev]);
+
+        if (editingId && editingType === "feeding") {
+          const original = events.find((e) => e.id === editingId) as
+            | FeedingEvent
+            | undefined;
+
+          const { data, error } = await supabase
+            .from("events")
+            .update({
+              ...payload,
+              time: original?.time ?? nowIso,
+            })
+            .eq("id", editingId)
+            .select("*")
+            .single();
+
+          if (!error && data) {
+            const updated: FeedingEvent = {
+              id: data.id,
+              type: "feeding",
+              time: data.time,
+              notes: data.notes ?? undefined,
+              feedingMethod: data.feeding_method,
+              amountMl: data.amount_ml ?? undefined,
+              durationMinutes: data.duration_minutes ?? undefined,
+            };
+            setEvents((prev) =>
+              prev.map((e) => (e.id === updated.id ? updated : e))
+            );
+          }
+        } else {
+          const { data, error } = await supabase
+            .from("events")
+            .insert(payload)
+            .select("*")
+            .single();
+
+          if (!error && data) {
+            const newEvent: FeedingEvent = {
+              id: data.id,
+              type: "feeding",
+              time: data.time,
+              notes: data.notes ?? undefined,
+              feedingMethod: data.feeding_method,
+              amountMl: data.amount_ml ?? undefined,
+              durationMinutes: data.duration_minutes ?? undefined,
+            };
+            setEvents((prev) => [newEvent, ...prev]);
+          }
+        }
       }
     } else {
       const payload = {
@@ -353,26 +494,57 @@ export default function Home() {
         duration_minutes: null,
       };
 
-      const { data, error } = await supabase
-        .from("events")
-        .insert(payload)
-        .select("*")
-        .single();
+      if (editingId && editingType === "diaper") {
+        const original = events.find((e) => e.id === editingId) as
+          | DiaperEvent
+          | undefined;
 
-      if (!error && data) {
-        const newEvent: DiaperEvent = {
-          id: data.id,
-          type: "diaper",
-          time: data.time,
-          notes: data.notes ?? undefined,
-          diaperKind: data.diaper_kind,
-        };
-        setEvents((prev) => [newEvent, ...prev]);
+        const { data, error } = await supabase
+          .from("events")
+          .update({
+            ...payload,
+            time: original?.time ?? nowIso,
+          })
+          .eq("id", editingId)
+          .select("*")
+          .single();
+
+        if (!error && data) {
+          const updated: DiaperEvent = {
+            id: data.id,
+            type: "diaper",
+            time: data.time,
+            notes: data.notes ?? undefined,
+            diaperKind: data.diaper_kind,
+          };
+          setEvents((prev) =>
+            prev.map((e) => (e.id === updated.id ? updated : e))
+          );
+        }
+      } else {
+        const { data, error } = await supabase
+          .from("events")
+          .insert(payload)
+          .select("*")
+          .single();
+
+        if (!error && data) {
+          const newEvent: DiaperEvent = {
+            id: data.id,
+            type: "diaper",
+            time: data.time,
+            notes: data.notes ?? undefined,
+            diaperKind: data.diaper_kind,
+          };
+          setEvents((prev) => [newEvent, ...prev]);
+        }
       }
     }
 
     setAmountMl("");
     setDurationMinutes("");
+    setEditingId(null);
+    setEditingType(null);
     setIsSaving(false);
   }
 
@@ -390,6 +562,89 @@ export default function Home() {
 
   return (
     <div className="min-h-screen text-slate-900">
+      {!unlocked && (
+        <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-sky-50 to-rose-50 px-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white/95 p-6 shadow-lg ring-1 ring-slate-100">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M8 11V8a4 4 0 0 1 8 0v3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                  <rect
+                    x="5"
+                    y="11"
+                    width="14"
+                    height="9"
+                    rx="2"
+                    fill="currentColor"
+                    opacity="0.9"
+                  />
+                </svg>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Užraktas
+                </p>
+                <p className="text-sm font-medium text-slate-800">
+                  Įvesk prieigos kodą
+                </p>
+              </div>
+            </div>
+            <form
+              className="mt-4 space-y-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (codeInput.trim() === "1337") {
+                  setUnlocked(true);
+                  setCodeError("");
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem("baby-diary-unlocked-v1", "true");
+                  }
+                } else {
+                  setCodeError("Neteisingas kodas. Bandyk dar kartą.");
+                }
+              }}
+            >
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-slate-600">
+                  Kodas
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={codeInput}
+                  onChange={(e) => {
+                    setCodeInput(e.target.value);
+                    if (codeError) setCodeError("");
+                  }}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-sm tracking-[0.5em] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                  placeholder="••••"
+                />
+              </div>
+              {codeError && (
+                <p className="text-[11px] text-rose-600">{codeError}</p>
+              )}
+              <button
+                type="submit"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700"
+              >
+                Atrakinti
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+      {unlocked && (
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -741,19 +996,28 @@ export default function Home() {
                       />
                     </div>
                   )}
-                  {feedingMethod === "breast" && (
+                  {feedingMethod === "breast" && activeBreastFeeding && (
                     <div className="space-y-1">
-                      <label className="text-[11px] font-medium text-slate-600">
-                        Trukmė (min)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={durationMinutes}
-                        onChange={(e) => setDurationMinutes(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                        placeholder="pvz. 15"
-                      />
+                      <p className="text-[11px] font-medium text-slate-600">
+                        Žindymo trukmė
+                      </p>
+                      <p className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
+                        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-sky-200">
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-700" />
+                        </span>
+                        <span>
+                          Žindoma{" "}
+                          {Math.max(
+                            0,
+                            Math.round(
+                              (now.getTime() -
+                                new Date(activeBreastFeeding.time).getTime()) /
+                                60000
+                            )
+                          )}{" "}
+                          min
+                        </span>
+                      </p>
                     </div>
                   )}
                 </div>
@@ -781,7 +1045,13 @@ export default function Home() {
                         fill="currentColor"
                       />
                     </svg>
-                    Išsaugoti maitinimą
+                    {feedingMethod === "breast"
+                      ? activeBreastFeeding
+                        ? "Baigti žindymą"
+                        : "Pradėti žindymą"
+                      : editingId && editingType === "feeding"
+                      ? "Atnaujinti maitinimą"
+                      : "Išsaugoti maitinimą"}
                   </>
                 )}
               </button>
@@ -872,7 +1142,9 @@ export default function Home() {
                         fill="currentColor"
                       />
                     </svg>
-                    Išsaugoti sauskelnes
+                    {editingId && editingType === "diaper"
+                      ? "Atnaujinti sauskelnes"
+                      : "Išsaugoti sauskelnes"}
                   </>
                 )}
               </button>
@@ -1009,6 +1281,16 @@ export default function Home() {
                           <span className="text-[11px] text-slate-500">
                             {formatTimeLabel(e.time)}
                           </span>
+                          {(e.type === "feeding" && e.feedingMethod === "formula") ||
+                          e.type === "diaper" ? (
+                            <button
+                              type="button"
+                              onClick={() => startEdit(e)}
+                              className="ml-1 text-[10px] text-sky-600 hover:text-sky-800"
+                            >
+                              Redaguoti
+                            </button>
+                          ) : null}
                         </div>
 
                         {e.type === "feeding" ? (
@@ -1016,10 +1298,24 @@ export default function Home() {
                             {e.feedingMethod === "breast"
                               ? "Krūtimi"
                               : "Mišinėlis"}
-                            {e.amountMl ? ` • ${e.amountMl} ml` : null}
-                            {e.durationMinutes
-                              ? ` • ${e.durationMinutes} min`
+                            {e.amountMl && e.feedingMethod === "formula"
+                              ? ` • ${e.amountMl} ml`
                               : null}
+                            {e.feedingMethod === "breast" &&
+                            e.durationMinutes != null ? (
+                              <>
+                                {" "}
+                                •{" "}
+                                {formatTimeLabel(e.time)}–
+                                {formatTimeLabel(
+                                  new Date(
+                                    new Date(e.time).getTime() +
+                                      e.durationMinutes * 60000
+                                  ).toISOString()
+                                )}{" "}
+                                ({e.durationMinutes} min)
+                              </>
+                            ) : null}
                           </p>
                         ) : e.type === "diaper" ? (
                           <p className="text-xs text-slate-700">
@@ -1029,10 +1325,18 @@ export default function Home() {
                           </p>
                         ) : (
                           <p className="text-xs text-slate-700">
-                            Miegas nuo {formatTimeLabel(e.time)}
                             {e.sleepEnd
-                              ? ` iki ${formatTimeLabel(e.sleepEnd)}`
-                              : " (vyksta)"}
+                              ? `Miegas ${formatTimeLabel(
+                                  e.time
+                                )}–${formatTimeLabel(e.sleepEnd)} (${Math.max(
+                                  0,
+                                  Math.round(
+                                    (new Date(e.sleepEnd).getTime() -
+                                      new Date(e.time).getTime()) /
+                                      60000
+                                  )
+                                )} min)`
+                              : `Miegas nuo ${formatTimeLabel(e.time)} (vyksta)`}
                           </p>
                         )}
 
@@ -1050,6 +1354,7 @@ export default function Home() {
 
         {/* Archyvas perkeltas į atskirą /archive puslapį */}
       </main>
+      )}
     </div>
   );
 }
