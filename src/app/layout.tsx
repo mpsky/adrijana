@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kūdikio dienoraštis",
-  description: "Šiuolaikiškas kūdikio maitinimo, sauskelnių ir miego sekimo dienoraštis.",
+  title: "Adrijana",
+  description:
+    "Adrijanos maitinimo, sauskelnių ir miego sekimo dienoraštis.",
+  icons: {
+    icon: "/adrijana-icon.png",
+  },
 };
 
 export default function RootLayout({
