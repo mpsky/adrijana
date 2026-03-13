@@ -38,6 +38,12 @@ type SleepEvent = {
 
 type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
 
+type WeightEntry = {
+  id: string;
+  time: string;
+  weightGrams: number;
+};
+
 const BABY_NAME = "Adrijana";
 const BABY_BIRTH_ISO = "2026-03-04T14:28:00";
 
@@ -76,6 +82,19 @@ export default function Home() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<EventType | null>(null);
 
+  const [weightEntries, setWeightEntries] = useState<WeightEntry[]>([]);
+  const [weightInput, setWeightInput] = useState<string>("");
+  const [weightDateInput, setWeightDateInput] = useState<string>("");
+  const [weightExpanded, setWeightExpanded] = useState<boolean>(false);
+
+  const sortedWeightEntries = useMemo(
+    () =>
+      [...weightEntries].sort(
+        (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()
+      ),
+    [weightEntries]
+  );
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem(
@@ -83,6 +102,30 @@ export default function Home() {
       );
       if (stored === "true") {
         setUnlocked(true);
+      }
+
+      const storedWeights = window.localStorage.getItem(
+        "baby-diary-weight-v1"
+      );
+      if (storedWeights) {
+        try {
+          const parsed = JSON.parse(storedWeights) as WeightEntry[];
+          if (Array.isArray(parsed)) {
+            setWeightEntries(
+              parsed
+                .filter(
+                  (w) =>
+                    typeof w.time === "string" &&
+                    typeof w.weightGrams === "number"
+                )
+                .sort(
+                  (a, b) =>
+                    new Date(a.time).getTime() - new Date(b.time).getTime()
+                )
+            );
+          }
+        } catch {
+        }
       }
     }
 
@@ -136,6 +179,102 @@ export default function Home() {
     }
 
     loadInitialData();
+
+    const channel = supabase
+      .channel("events-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "events" },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+          let mapped: BabyEvent;
+          if (row.type === "feeding") {
+            mapped = {
+              id: row.id,
+              type: "feeding",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              feedingMethod: row.feeding_method,
+              amountMl: row.amount_ml ?? undefined,
+              durationMinutes: row.duration_minutes ?? undefined,
+            };
+          } else if (row.type === "diaper") {
+            mapped = {
+              id: row.id,
+              type: "diaper",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              diaperKind: row.diaper_kind,
+            };
+          } else {
+            mapped = {
+              id: row.id,
+              type: "sleep",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              sleepEnd: row.sleep_end ?? undefined,
+            };
+          }
+          setEvents((prev) => {
+            const without = prev.filter((e) => e.id !== mapped.id);
+            return [mapped, ...without];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "events" },
+        (payload) => {
+          const row = payload.new as any;
+          if (!row) return;
+          let mapped: BabyEvent;
+          if (row.type === "feeding") {
+            mapped = {
+              id: row.id,
+              type: "feeding",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              feedingMethod: row.feeding_method,
+              amountMl: row.amount_ml ?? undefined,
+              durationMinutes: row.duration_minutes ?? undefined,
+            };
+          } else if (row.type === "diaper") {
+            mapped = {
+              id: row.id,
+              type: "diaper",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              diaperKind: row.diaper_kind,
+            };
+          } else {
+            mapped = {
+              id: row.id,
+              type: "sleep",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              sleepEnd: row.sleep_end ?? undefined,
+            };
+          }
+          setEvents((prev) =>
+            prev.map((e) => (e.id === mapped.id ? mapped : e))
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "events" },
+        (payload) => {
+          const row = payload.old as any;
+          if (!row?.id) return;
+          setEvents((prev) => prev.filter((e) => e.id !== row.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const todayEvents = useMemo(
@@ -147,12 +286,17 @@ export default function Home() {
     const base = {
       todayFeedings: 0,
       todayFeedingsAmount: 0,
+      todayFormulaAmount: 0,
       todayBreastMinutes: 0,
       todayPumpedAmount: 0,
       todayDiapers: 0,
+      todayWetDiapers: 0,
+      todayDirtyDiapers: 0,
+      todayBothDiapers: 0,
       todaySleepMinutes: 0,
       totalFeedings: 0,
       totalFeedingsAmount: 0,
+      totalFormulaAmount: 0,
       totalBreastMinutes: 0,
       totalPumpedAmount: 0,
       totalDiapers: 0,
@@ -163,11 +307,14 @@ export default function Home() {
       if (e.type === "feeding") {
         base.totalFeedings += 1;
 
-        if (
-          (e.feedingMethod === "formula" || e.feedingMethod === "pumped") &&
-          typeof e.amountMl === "number"
-        ) {
-          base.totalFeedingsAmount += e.amountMl;
+        if (typeof e.amountMl === "number") {
+          if (e.feedingMethod === "formula") {
+            base.totalFormulaAmount += e.amountMl;
+            base.totalFeedingsAmount += e.amountMl;
+          } else if (e.feedingMethod === "pumped") {
+            base.totalPumpedAmount += e.amountMl;
+            base.totalFeedingsAmount += e.amountMl;
+          }
         }
         if (
           e.feedingMethod === "breast" &&
@@ -179,13 +326,13 @@ export default function Home() {
         if (isToday(e.time)) {
           base.todayFeedings += 1;
 
-          if (
-            (e.feedingMethod === "formula" || e.feedingMethod === "pumped") &&
-            typeof e.amountMl === "number"
-          ) {
-            base.todayFeedingsAmount += e.amountMl;
-            if (e.feedingMethod === "pumped") {
+          if (typeof e.amountMl === "number") {
+            if (e.feedingMethod === "formula") {
+              base.todayFormulaAmount += e.amountMl;
+              base.todayFeedingsAmount += e.amountMl;
+            } else if (e.feedingMethod === "pumped") {
               base.todayPumpedAmount += e.amountMl;
+              base.todayFeedingsAmount += e.amountMl;
             }
           }
           if (
@@ -199,6 +346,13 @@ export default function Home() {
         base.totalDiapers += 1;
         if (isToday(e.time)) {
           base.todayDiapers += 1;
+          if (e.diaperKind === "wet") {
+            base.todayWetDiapers += 1;
+          } else if (e.diaperKind === "dirty") {
+            base.todayDirtyDiapers += 1;
+          } else if (e.diaperKind === "both") {
+            base.todayBothDiapers += 1;
+          }
         }
       } else if (e.type === "sleep" && e.sleepEnd) {
         const start = new Date(e.time).getTime();
@@ -220,6 +374,76 @@ export default function Home() {
     const id = setInterval(() => setNow(new Date()), 1_000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      "baby-diary-weight-v1",
+      JSON.stringify(weightEntries)
+    );
+  }, [weightEntries]);
+
+  const feedingGuidance = useMemo(() => {
+    const nowMs = now.getTime();
+    const threeHoursMs = 3 * 60 * 60 * 1_000;
+    const dayMs = 24 * 60 * 60 * 1_000;
+    const threeHourWindowStart = nowMs - threeHoursMs;
+    const dayWindowStart = nowMs - dayMs;
+
+    let last3hFormulaMl = 0;
+    let last3hEarliestMs: number | null = null;
+
+    let last24hFormulaMl = 0;
+
+    for (const e of events) {
+      if (e.type !== "feeding" || e.feedingMethod !== "formula") continue;
+      const t = new Date(e.time).getTime();
+      if (Number.isNaN(t)) continue;
+
+      if (t >= threeHourWindowStart && t <= nowMs && typeof e.amountMl === "number") {
+        last3hFormulaMl += e.amountMl;
+        if (last3hEarliestMs == null || t < last3hEarliestMs) {
+          last3hEarliestMs = t;
+        }
+      }
+
+      if (t >= dayWindowStart && t <= nowMs && typeof e.amountMl === "number") {
+        last24hFormulaMl += e.amountMl;
+      }
+    }
+
+    const limit3h = 100;
+    const limit24h = 560;
+
+    const remaining3h = Math.max(0, limit3h - last3hFormulaMl);
+
+    let next3hAvailableAt: Date | null = null;
+    let next3hAvailableInMinutes: number | null = null;
+
+    if (remaining3h <= 0 && last3hEarliestMs != null) {
+      const ts = last3hEarliestMs + threeHoursMs;
+      if (ts > nowMs) {
+        next3hAvailableAt = new Date(ts);
+        next3hAvailableInMinutes = Math.max(
+          0,
+          Math.round((ts - nowMs) / 60_000)
+        );
+      }
+    }
+
+    const remaining24h = Math.max(0, limit24h - last24hFormulaMl);
+
+    return {
+      last3hFormulaMl,
+      remaining3h,
+      next3hAvailableAt,
+      next3hAvailableInMinutes,
+      last24hFormulaMl,
+      remaining24h,
+      limit3h,
+      limit24h,
+    };
+  }, [events, now]);
 
   const babyAgeLabel = useMemo(() => {
     const birth = new Date(BABY_BIRTH_ISO);
@@ -643,7 +867,7 @@ export default function Home() {
                     setCodeInput(e.target.value);
                     if (codeError) setCodeError("");
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-sm tracking-[0.5em] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-[16px] tracking-[0.5em] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
                   placeholder="••••"
                 />
               </div>
@@ -664,10 +888,10 @@ export default function Home() {
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Mobile: gimimo data ir amžius vienoje kapsulėje */}
+            {/* Mobile: gimimo data ir amžius – viena eilutė, be žodžių */}
             <div className="block w-full sm:hidden">
-              <span className="inline-flex w-full items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-[11px] text-slate-700 ring-1 ring-sky-100">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+              <div className="flex w-full items-center gap-2 rounded-2xl bg-sky-50 px-3 py-1.5 text-[10px] text-slate-700 ring-1 ring-sky-100">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700 shrink-0">
                   <svg
                     viewBox="0 0 24 24"
                     className="h-3 w-3"
@@ -680,17 +904,17 @@ export default function Home() {
                     <path
                       d="M9 3.5h6M8 10h8"
                       stroke="#e5e7eb"
-                      strokeWidth="1.4"
+                      strokeWidth="1.2"
                       strokeLinecap="round"
                     />
                   </svg>
                 </span>
                 <span className="flex-1 truncate">
-                  <span>gim. 2026-03-04 14:28</span>
+                  <span>2026-03-04 14:28</span>
                   <span className="mx-1.5">•</span>
-                  <span>amžius {babyAgeLabel}</span>
+                  <span>{babyAgeLabel}</span>
                 </span>
-              </span>
+              </div>
             </div>
 
             {/* Desktop: atskiros gimimo datos ir amžiaus kapsulės */}
@@ -752,6 +976,146 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="rounded-3xl bg-white/95 p-3 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-100">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                  <path
+                    d="M8 4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v1.5A7.5 7.5 0 0 1 11.5 16H11L8 20l-3-4H4.5A3.5 3.5 0 0 1 1 12.5V8a2 2 0 0 1 2-2h1Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                Kūdikio svoris
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setWeightExpanded((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+            >
+              <span>{weightExpanded ? "Slėpti" : "Rodyti"}</span>
+              <span className="text-[9px]">
+                {weightExpanded ? "▴" : "▾"}
+              </span>
+            </button>
+          </div>
+
+          {weightExpanded && (
+            <form
+              className="grid w-full gap-1.5 text-xs grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] sm:w-auto"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const weight = Number(weightInput.replace(",", "."));
+                if (!weight || !Number.isFinite(weight)) return;
+                const timeIso = weightDateInput
+                  ? new Date(weightDateInput).toISOString()
+                  : new Date().toISOString();
+                const entry: WeightEntry = {
+                  id: `${timeIso}-${Math.random().toString(36).slice(2, 8)}`,
+                  time: timeIso,
+                  weightGrams: Math.round(weight),
+                };
+                setWeightEntries((prev) => [...prev, entry]);
+                setWeightInput("");
+              }}
+            >
+              <div className="space-y-0.5">
+                <label className="block text-[10px] font-medium text-slate-600">
+                  Svoris (g)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  inputMode="decimal"
+                  value={weightInput}
+                  onChange={(e) => setWeightInput(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
+                  placeholder="pvz. 3200"
+                />
+              </div>
+              <div className="space-y-0.5">
+                <label className="block text-[10px] font-medium text-slate-600">
+                  Data
+                </label>
+                <input
+                  type="datetime-local"
+                  value={weightDateInput}
+                  onChange={(e) => setWeightDateInput(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
+                />
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="submit"
+                  className="inline-flex w-full items-center justify-center rounded-xl bg-rose-500 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm transition hover:bg-rose-600 sm:w-auto"
+                >
+                  Pridėti svorį
+                </button>
+              </div>
+            </form>
+          )}
+
+          {weightExpanded && (
+          <div className="mt-2">
+            <div className="max-h-32 space-y-1 overflow-y-auto pr-1 text-[11px] text-slate-600">
+              {sortedWeightEntries.length === 0 ? (
+                <p className="text-slate-400">
+                  Dar nėra svorio įrašų. Pradėk nuo gimimo ar išleidimo namo
+                  svorio.
+                </p>
+              ) : (
+                sortedWeightEntries
+                  .slice()
+                  .reverse()
+                  .map((w, idx, arr) => {
+                    const current = w.weightGrams;
+                    const prev =
+                      idx === arr.length - 1
+                        ? undefined
+                        : arr[idx + 1].weightGrams;
+                    const diff =
+                      prev !== undefined ? current - prev : undefined;
+                    const d = new Date(w.time);
+                    const label = d.toLocaleDateString("lt-LT", {
+                      month: "2-digit",
+                      day: "2-digit",
+                    });
+                    return (
+                      <div
+                        key={w.id}
+                        className="flex items-center justify-between rounded-lg bg-slate-50 px-2 py-1 shadow-sm ring-1 ring-slate-100"
+                      >
+                        <span className="font-mono text-[10px] text-slate-500">
+                          {label}
+                        </span>
+                        <span className="text-[11px] font-medium text-slate-800">
+                          {current} g
+                          {diff != null && diff !== 0 && (
+                            <span
+                              className={`ml-1 font-normal ${
+                                diff > 0
+                                  ? "text-emerald-600"
+                                  : "text-rose-600"
+                              }`}
+                            >
+                              {diff > 0 ? "+" : ""}
+                              {diff} g
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+          </div>
+          )}
+        </section>
+
         <section className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
             {/* Šiandien – maitinimas ir miegas */}
@@ -792,7 +1156,13 @@ export default function Home() {
                 <p className="flex items-center justify-between">
                   <span>Mišinėlis</span>
                   <span className="font-semibold text-sky-700">
-                    {stats.todayFeedingsAmount} ml
+                    {stats.todayFormulaAmount} ml
+                  </span>
+                </p>
+                <p className="flex items-center justify-between">
+                  <span>Mamos pienas</span>
+                  <span className="font-semibold text-rose-700">
+                    {stats.todayPumpedAmount} ml
                   </span>
                 </p>
                 <p className="flex items-center justify-between">
@@ -805,11 +1175,14 @@ export default function Home() {
                   {(() => {
                     const max =
                       Math.max(
-                        stats.todayFeedingsAmount,
+                        stats.todayFormulaAmount,
+                        stats.todayPumpedAmount,
                         stats.todayBreastMinutes
                       ) || 1;
                     const formulaWidth =
-                      (stats.todayFeedingsAmount / max) * 100 || 0;
+                      (stats.todayFormulaAmount / max) * 100 || 0;
+                    const pumpedWidth =
+                      (stats.todayPumpedAmount / max) * 100 || 0;
                     const breastWidth =
                       (stats.todayBreastMinutes / max) * 100 || 0;
                     return (
@@ -817,6 +1190,10 @@ export default function Home() {
                         <div
                           className="h-full bg-sky-400 transition-[width]"
                           style={{ width: `${formulaWidth}%` }}
+                        />
+                        <div
+                          className="h-full bg-rose-300 transition-[width]"
+                          style={{ width: `${pumpedWidth}%` }}
                         />
                         <div
                           className="h-full bg-sky-200 transition-[width]"
@@ -863,10 +1240,26 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-              <p className="mt-3 text-xs text-slate-600">
-                Reguliarus keitimas padeda greičiau pastebėti bet kokius
-                pokyčius.
-              </p>
+              <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+                <p className="flex items-center justify-between">
+                  <span>Šlapias</span>
+                  <span className="font-semibold text-emerald-700">
+                    {stats.todayWetDiapers}
+                  </span>
+                </p>
+                <p className="flex items-center justify-between">
+                  <span>Purvinas</span>
+                  <span className="font-semibold text-emerald-700">
+                    {stats.todayDirtyDiapers}
+                  </span>
+                </p>
+                <p className="flex items-center justify-between">
+                  <span>Abu</span>
+                  <span className="font-semibold text-emerald-700">
+                    {stats.todayBothDiapers}
+                  </span>
+                </p>
+              </div>
             </div>
 
             {/* Viso laikotarpio – santrauka */}
@@ -910,13 +1303,13 @@ export default function Home() {
                 <p className="flex items-center justify-between text-slate-300">
                   <span>Mišinėlis</span>
                   <span className="font-semibold text-sky-200">
-                    {stats.totalFeedingsAmount} ml
+                    {stats.totalFormulaAmount} ml
                   </span>
                 </p>
                 <p className="flex items-center justify-between text-slate-300">
                   <span>Mamos pienas</span>
                   <span className="font-semibold text-sky-200">
-                    {stats.todayPumpedAmount} ml
+                    {stats.totalPumpedAmount} ml
                   </span>
                 </p>
                 <p className="flex items-center justify-between text-slate-300">
@@ -967,13 +1360,104 @@ export default function Home() {
           </div>
         </section>
 
+        <section className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-2xl bg-sky-50/80 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                  <path
+                    d="M7 4h10a2 2 0 0 1 2 2v1.5A2.5 2.5 0 0 1 16.5 10H15l-2 2-2-2H7A2.5 2.5 0 0 1 4.5 7.5V6A2 2 0 0 1 7 4Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Rekomendacija per 3 val.
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Iki {feedingGuidance.limit3h} ml mišinėlio.
+                </p>
+              </div>
+            </div>
+            <dl className="mt-3 space-y-1.5 text-xs text-slate-600">
+              <div className="flex items-center justify-between">
+                <dt>Per paskutines 3 val.</dt>
+                <dd className="font-semibold text-sky-700">
+                  {Math.round(feedingGuidance.last3hFormulaMl)} ml
+                </dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>Liko iki ribos</dt>
+                <dd className="font-semibold text-emerald-700">
+                  {Math.max(
+                    0,
+                    Math.round(feedingGuidance.remaining3h)
+                  )}{" "}
+                  ml
+                </dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>Kada galima vėl?</dt>
+                <dd className="text-right">
+                  {feedingGuidance.next3hAvailableInMinutes != null &&
+                  feedingGuidance.next3hAvailableInMinutes > 0
+                    ? `Maždaug po ${
+                        feedingGuidance.next3hAvailableInMinutes
+                      } min`
+                    : "–"}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="rounded-2xl bg-amber-50/80 p-4 shadow-sm ring-1 ring-amber-100 backdrop-blur">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                  <path
+                    d="M6 5.5A2.5 2.5 0 0 1 8.5 3h7A2.5 2.5 0 0 1 18 5.5V9a6 6 0 0 1-6 6H9.5L7 17.5V15A6 6 0 0 1 6 9Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  Rekomendacija per 24 val.
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Apie {feedingGuidance.limit24h} ml mišinėlio per parą.
+                </p>
+              </div>
+            </div>
+            <dl className="mt-3 space-y-1.5 text-xs text-slate-600">
+              <div className="flex items-center justify-between">
+                <dt>Per paskutines 24 val.</dt>
+                <dd className="font-semibold text-sky-700">
+                  {Math.round(feedingGuidance.last24hFormulaMl)} ml
+                </dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>Liko iki ribos</dt>
+                <dd className="font-semibold text-emerald-700">
+                  {Math.max(
+                    0,
+                    Math.round(feedingGuidance.remaining24h)
+                  )}{" "}
+                  ml
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
         <section className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="grid gap-4 lg:grid-cols-[2fr,3fr]">
             <div className="grid gap-4 sm:grid-cols-3">
               {/* Maitinimas */}
-              <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3 shadow-sm">
+              <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-3 shadow-sm">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-700">
                     <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
                       <path
                         d="M9 3h6v3.5a3.5 3.5 0 0 1-.35 1.53L13 11v7a2 2 0 0 1-2 2H9Z"
@@ -995,14 +1479,14 @@ export default function Home() {
                     <p className="text-[11px] font-medium text-slate-600">
                       Maitinimo tipas
                     </p>
-                    <div className="flex flex-col gap-1 rounded-2xl bg-slate-100 p-1.5 text-[11px] font-medium">
+                    <div className="flex flex-col gap-1 rounded-2xl bg-rose-50 p-1.5 text-[11px] font-medium">
                       <button
                         type="button"
                         onClick={() => setFeedingMethod("breast")}
                         className={`rounded-full px-3 py-2 transition ${
                           feedingMethod === "breast"
-                            ? "bg-sky-600 text-white shadow-sm"
-                            : "text-slate-700 hover:text-slate-900"
+                            ? "bg-rose-500 text-white shadow-sm"
+                            : "text-rose-900 hover:text-rose-700"
                         }`}
                       >
                         Krūtimi
@@ -1012,8 +1496,8 @@ export default function Home() {
                         onClick={() => setFeedingMethod("formula")}
                         className={`rounded-full px-3 py-2 transition ${
                           feedingMethod === "formula"
-                            ? "bg-sky-600 text-white shadow-sm"
-                            : "text-slate-700 hover:text-slate-900"
+                            ? "bg-rose-500 text-white shadow-sm"
+                            : "text-rose-900 hover:text-rose-700"
                         }`}
                       >
                         Mišinėlis
@@ -1023,8 +1507,8 @@ export default function Home() {
                         onClick={() => setFeedingMethod("pumped")}
                         className={`rounded-full px-3 py-2 transition ${
                           feedingMethod === "pumped"
-                            ? "bg-sky-600 text-white shadow-sm"
-                            : "text-slate-700 hover:text-slate-900"
+                            ? "bg-rose-500 text-white shadow-sm"
+                            : "text-rose-900 hover:text-rose-700"
                         }`}
                       >
                         Mamos pienas
@@ -1042,16 +1526,16 @@ export default function Home() {
                         min={0}
                         value={amountMl}
                         onChange={(e) => setAmountMl(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                         placeholder="pvz. 90"
                       />
                     </div>
                   )}
                   {feedingMethod === "breast" && activeBreastFeeding && (
                     <div className="space-y-1 text-center">
-                      <div className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-800 ring-1 ring-sky-200">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-200">
-                          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-sky-700" />
+                      <div className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800 ring-1 ring-rose-200">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-200">
+                          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-700" />
                         </span>
                         <span className="font-mono">
                           {(() => {
@@ -1080,7 +1564,7 @@ export default function Home() {
                 type="button"
                 onClick={() => handleAddEvent("feeding")}
                 disabled={isSaving}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-rose-500 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isSaving ? (
                   <>
