@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/authContext";
 import { getBabyInfo } from "@/lib/babyStorage";
 
 type WeightEntry = {
@@ -11,6 +13,7 @@ type WeightEntry = {
 };
 
 export default function SvorisPage() {
+  const { user } = useAuth();
   const [unlocked, setUnlocked] = useState<boolean>(false);
   const [codeInput, setCodeInput] = useState<string>("");
   const [codeError, setCodeError] = useState<string>("");
@@ -21,6 +24,10 @@ export default function SvorisPage() {
 
   const [now, setNow] = useState<Date>(new Date());
   const [babyInfo, setBabyInfo] = useState(() => getBabyInfo());
+
+  const [babyId, setBabyId] = useState<string | null>(null);
+  const [isBabyLoading, setIsBabyLoading] = useState(true);
+  const [babyError, setBabyError] = useState<string | null>(null);
 
   const sortedWeightEntries = useMemo(
     () =>
@@ -88,29 +95,6 @@ export default function SvorisPage() {
       if (stored === "true") {
         setUnlocked(true);
       }
-
-      const storedWeights = window.localStorage.getItem("baby-diary-weight-v1");
-      if (storedWeights) {
-        try {
-          const parsed = JSON.parse(storedWeights) as WeightEntry[];
-          if (Array.isArray(parsed)) {
-            setWeightEntries(
-              parsed
-                .filter(
-                  (w) =>
-                    typeof w.time === "string" &&
-                    typeof w.weightGrams === "number"
-                )
-                .sort(
-                  (a, b) =>
-                    new Date(a.time).getTime() - new Date(b.time).getTime()
-                )
-            );
-          }
-        } catch {
-          // ignore
-        }
-      }
     }
   }, []);
 
@@ -120,12 +104,57 @@ export default function SvorisPage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      "baby-diary-weight-v1",
-      JSON.stringify(weightEntries)
-    );
-  }, [weightEntries]);
+    if (!user || !unlocked) return;
+    let cancelled = false;
+    (async () => {
+      setIsBabyLoading(true);
+      setBabyError(null);
+      const { data: member, error } = await supabase
+        .from("baby_members")
+        .select("baby_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setBabyError(error.message);
+        setIsBabyLoading(false);
+        return;
+      }
+      if (!member?.baby_id) {
+        setBabyId(null);
+        setWeightEntries([]);
+        setIsBabyLoading(false);
+        return;
+      }
+      setBabyId(member.baby_id as string);
+
+      const { data: rows, error: weightsError } = await supabase
+        .from("weights")
+        .select("id, time, weight_grams")
+        .eq("baby_id", member.baby_id)
+        .order("time", { ascending: true });
+
+      if (cancelled) return;
+      if (weightsError) {
+        setBabyError(weightsError.message);
+        setIsBabyLoading(false);
+        return;
+      }
+
+      setWeightEntries(
+        (rows || []).map((row: any) => ({
+          id: row.id as string,
+          time: row.time as string,
+          weightGrams: row.weight_grams as number,
+        }))
+      );
+      setIsBabyLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, unlocked]);
 
   return (
     <div className="min-h-screen text-slate-900">
@@ -327,17 +356,44 @@ export default function SvorisPage() {
 
             <form
               className="mt-4 grid w-full gap-1.5 text-xs grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] sm:w-auto"
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
+                if (!user) {
+                  alert("Reikia būti prisijungus.");
+                  return;
+                }
+                if (!babyId) {
+                  alert("Pirmiausia užregistruok kūdikį profilyje.");
+                  return;
+                }
+
                 const weight = Number(weightInput.replace(",", "."));
                 if (!weight || !Number.isFinite(weight)) return;
+
                 const timeIso = weightDateInput
                   ? new Date(weightDateInput + "T12:00:00").toISOString()
                   : new Date().toISOString();
+
+                const { data, error } = await supabase
+                  .from("weights")
+                  .insert({
+                    baby_id: babyId,
+                    time: timeIso,
+                    weight_grams: Math.round(weight),
+                    created_by: user.id,
+                  })
+                  .select("id, time, weight_grams")
+                  .single();
+
+                if (error) {
+                  alert("Nepavyko išsaugoti svorio: " + error.message);
+                  return;
+                }
+
                 const entry: WeightEntry = {
-                  id: `${timeIso}-${Math.random().toString(36).slice(2, 8)}`,
-                  time: timeIso,
-                  weightGrams: Math.round(weight),
+                  id: data.id as string,
+                  time: data.time as string,
+                  weightGrams: data.weight_grams as number,
                 };
                 setWeightEntries((prev) => [...prev, entry]);
                 setWeightInput("");
@@ -353,7 +409,7 @@ export default function SvorisPage() {
                   inputMode="decimal"
                   value={weightInput}
                   onChange={(e) => setWeightInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
                   placeholder="pvz. 3200"
                 />
               </div>
@@ -365,7 +421,7 @@ export default function SvorisPage() {
                   type="date"
                   value={weightDateInput}
                   onChange={(e) => setWeightDateInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
                 />
               </div>
               <div className="flex items-end">

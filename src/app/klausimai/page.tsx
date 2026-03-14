@@ -18,17 +18,30 @@ export default function KlausimaiPage() {
   const [codeInput, setCodeInput] = useState("");
   const [codeError, setCodeError] = useState("");
 
+  const [babyId, setBabyId] = useState<string | null>(null);
+  const [isBabyLoading, setIsBabyLoading] = useState(true);
+  const [babyError, setBabyError] = useState<string | null>(null);
+
   const [questions, setQuestions] = useState<QuestionEntry[]>([]);
   const [newQuestion, setNewQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const fetchQuestions = useCallback(async () => {
+  const fetchQuestions = useCallback(async (currentBabyId: string | null) => {
     setLoadError(null);
+    setIsLoading(true);
+
+    if (!currentBabyId) {
+      setQuestions([]);
+      setIsLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("questions")
       .select("id, question, answer, created_at")
+      .eq("baby_id", currentBabyId)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -56,14 +69,45 @@ export default function KlausimaiPage() {
   }, []);
 
   useEffect(() => {
-    if (!unlocked) return;
-    fetchQuestions();
-  }, [unlocked, fetchQuestions]);
+    if (!unlocked || !babyId) return;
+    fetchQuestions(babyId);
+  }, [unlocked, babyId, fetchQuestions]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      setIsBabyLoading(true);
+      setBabyError(null);
+      const { data: member, error } = await supabase
+        .from("baby_members")
+        .select("baby_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setBabyError(error.message);
+        setIsBabyLoading(false);
+        return;
+      }
+      setBabyId(member?.baby_id ?? null);
+      setIsBabyLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const addQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     const q = newQuestion.trim();
     if (!q) return;
+
+    if (!babyId) {
+      alert("Pirmiausia užregistruok kūdikį profilyje.");
+      return;
+    }
 
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const createdAt = new Date().toISOString();
@@ -77,6 +121,8 @@ export default function KlausimaiPage() {
     const { error } = await supabase.from("questions").insert({
       id,
       user_id: user?.id ?? undefined,
+      baby_id: babyId,
+      created_by: user?.id ?? undefined,
       question: q,
       answer: "",
     });
@@ -104,7 +150,7 @@ export default function KlausimaiPage() {
 
     if (error) {
       alert("Nepavyko išsaugoti atsakymo: " + error.message);
-      fetchQuestions();
+      fetchQuestions(babyId);
     }
   };
 
@@ -226,7 +272,7 @@ export default function KlausimaiPage() {
               value={newQuestion}
               onChange={(e) => setNewQuestion(e.target.value)}
               placeholder="Pridėk klausimą..."
-              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm shadow-sm outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
+              className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
             />
             <button
               type="submit"

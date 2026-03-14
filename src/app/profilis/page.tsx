@@ -279,7 +279,7 @@ export default function ProfilisPage() {
                   value={babyName}
                   onChange={(e) => setBabyName(e.target.value)}
                   placeholder="pvz. Adrijana"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
                 />
               </div>
               <div className="min-w-0 flex-1 space-y-1">
@@ -290,7 +290,7 @@ export default function ProfilisPage() {
                   type="datetime-local"
                   value={babyBirthInput}
                   onChange={(e) => setBabyBirthInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
                 />
               </div>
               <button

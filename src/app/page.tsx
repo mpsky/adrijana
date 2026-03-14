@@ -1179,40 +1179,40 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                <p className="flex items-center justify-between text-slate-300">
-                  <span>Maitinimai</span>
-                  <span className="font-semibold text-sky-200">
+              <div className="mt-3 grid grid-cols-1 gap-y-1.5 text-xs sm:grid-cols-2 sm:gap-x-6">
+                <p className="flex items-center justify-between gap-3 text-slate-300">
+                  <span className="truncate">Maitinimai</span>
+                  <span className="shrink-0 font-semibold text-sky-200">
                     {stats.totalFeedings}
                   </span>
                 </p>
-                <p className="flex items-center justify-between text-slate-300">
-                  <span>Sauskelnių</span>
-                  <span className="font-semibold text-emerald-200">
+                <p className="flex items-center justify-between gap-3 text-slate-300">
+                  <span className="truncate">Sauskelnių</span>
+                  <span className="shrink-0 font-semibold text-emerald-200">
                     {stats.totalDiapers}
                   </span>
                 </p>
-                <p className="flex items-center justify-between text-slate-300">
-                  <span>Mišinėlis</span>
-                  <span className="font-semibold text-sky-200">
+                <p className="flex items-center justify-between gap-3 text-slate-300">
+                  <span className="truncate">Mišinėlis</span>
+                  <span className="shrink-0 font-semibold text-sky-200">
                     {stats.totalFormulaAmount} ml
                   </span>
                 </p>
-                <p className="flex items-center justify-between text-slate-300">
-                  <span>Mamos pienas</span>
-                  <span className="font-semibold text-sky-200">
+                <p className="flex items-center justify-between gap-3 text-slate-300">
+                  <span className="truncate">Mamos pienas</span>
+                  <span className="shrink-0 font-semibold text-sky-200">
                     {stats.totalPumpedAmount} ml
                   </span>
                 </p>
-                <p className="flex items-center justify-between text-slate-300">
-                  <span>Krūtimi</span>
-                  <span className="font-semibold text-sky-200">
+                <p className="flex items-center justify-between gap-3 text-slate-300">
+                  <span className="truncate">Krūtimi</span>
+                  <span className="shrink-0 font-semibold text-sky-200">
                     {stats.totalBreastMinutes} min
                   </span>
                 </p>
-                <p className="col-span-2 flex items-center justify-between text-slate-300">
-                  <span>Bendras miegas</span>
-                  <span className="font-semibold text-sky-200">
+                <p className="flex items-center justify-between gap-3 text-slate-300 sm:col-span-2">
+                  <span className="truncate">Bendras miegas</span>
+                  <span className="shrink-0 font-semibold text-sky-200">
                     {stats.totalSleepMinutes} min
                   </span>
                 </p>
