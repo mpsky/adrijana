@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { getBabyInfo, setBabyInfo } from "@/lib/babyStorage";
+import { Button } from "@/components/Button";
 
 type EventType = "feeding" | "diaper" | "sleep";
 
@@ -932,13 +933,13 @@ export default function Home() {
               {codeError && (
                 <p className="text-[11px] text-rose-600">{codeError}</p>
               )}
-              <button
+              <Button
                 type="submit"
                 disabled={isAcceptingCode}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-70"
+                className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700"
               >
                 {isAcceptingCode ? "Prijungiama..." : "Prisijungti prie kūdikio"}
-              </button>
+              </Button>
             </form>
             <p className="mt-4 text-center text-[11px] text-slate-500">
               Neturi kodo?{" "}
@@ -1344,8 +1345,8 @@ export default function Home() {
         <section className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="grid gap-4 lg:grid-cols-[2fr,3fr]">
             <div className="grid gap-4 sm:grid-cols-3">
-              {/* Maitinimas */}
-              <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-3 shadow-sm">
+            {/* Maitinimas */}
+            <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-4 shadow-sm">
                 <div className="flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-700">
                     <svg viewBox="0 0 64 64" className="h-4 w-4" aria-hidden="true" fill="currentColor">
@@ -1420,11 +1421,11 @@ export default function Home() {
                   )}
                   {feedingMethod === "breast" && activeBreastFeeding && (
                     <div className="space-y-1 text-center">
-                      <div className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800 ring-1 ring-rose-200">
+                      <div className="mx-auto inline-flex max-w-full items-center gap-2 rounded-2xl bg-rose-50 px-3.5 py-2.5 text-sm font-semibold text-rose-800 ring-1 ring-rose-200">
                         <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-200">
                           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-700" />
                         </span>
-                        <span className="font-mono">
+                        <span className="font-mono text-base sm:text-lg">
                           {(() => {
                             const diffMs =
                               now.getTime() -
@@ -1447,11 +1448,11 @@ export default function Home() {
                   )}
                 </div>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => handleAddEvent("feeding")}
                 disabled={isSaving}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-rose-500 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full bg-rose-500 text-xs text-white hover:bg-rose-600 disabled:cursor-not-allowed"
               >
                 {isSaving ? (
                   <>
@@ -1472,7 +1473,7 @@ export default function Home() {
                       : "Išsaugoti maitinimą"}
                   </>
                 )}
-              </button>
+              </Button>
               </div>
 
             {/* Sauskelnių keitimas */}
@@ -1534,11 +1535,11 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-              <button
+              <Button
                 type="button"
                 onClick={() => handleAddEvent("diaper")}
                 disabled={isSaving}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed"
               >
                 {isSaving ? (
                   <>
@@ -1555,7 +1556,7 @@ export default function Home() {
                       : "Išsaugoti sauskelnes"}
                   </>
                 )}
-              </button>
+              </Button>
             </div>
 
               {/* Miegas */}
@@ -1580,11 +1581,11 @@ export default function Home() {
                 </p>
                 {activeSleep && (
                   <div className="text-center">
-                    <div className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-800 ring-1 ring-purple-200">
+                    <div className="mx-auto inline-flex max-w-full items-center gap-2 rounded-2xl bg-purple-50 px-3.5 py-2.5 text-sm font-semibold text-purple-800 ring-1 ring-purple-200">
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-200">
                         <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-purple-700" />
                       </span>
-                      <span className="font-mono">
+                      <span className="font-mono text-base sm:text-lg">
                         {(() => {
                           const diffMs =
                             now.getTime() -
@@ -1605,11 +1606,11 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-                <button
+                <Button
                   type="button"
                   onClick={() => handleAddEvent("sleep")}
                   disabled={isSaving}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-purple-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="w-full bg-purple-600 text-xs text-white hover:bg-purple-700 disabled:cursor-not-allowed"
                 >
                   {isSaving ? (
                     <>
@@ -1624,7 +1625,7 @@ export default function Home() {
                       Pradėti / baigti miegą
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
 

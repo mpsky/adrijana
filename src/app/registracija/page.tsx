@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@/components/Button";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/authContext";
@@ -136,13 +137,13 @@ export default function RegistracijaPage() {
               />
             </div>
             {error && <p className="text-[11px] text-rose-600">{error}</p>}
-            <button
+            <Button
               type="submit"
               disabled={isSubmitting}
-              className="w-full rounded-xl bg-sky-600 px-3 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-70"
+              className="w-full bg-sky-600 text-white hover:bg-sky-700"
             >
               {isSubmitting ? "Kuriama..." : "Registruotis"}
-            </button>
+            </Button>
           </form>
 
           <p className="mt-4 text-center text-[11px] text-slate-500">

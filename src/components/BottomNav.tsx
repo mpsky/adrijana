@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 export function BottomNav() {
   const pathname = usePathname();
 
-  const iconClass = "h-6 w-6 shrink-0";
+  const iconClass = "h-7 w-7 shrink-0";
   const navItems = [
     {
       href: "/",
@@ -61,17 +61,17 @@ export function BottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 flex min-h-[64px] flex-col justify-center border-t border-slate-200 bg-white/95 px-1 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.08)] backdrop-blur supports-[padding:env(safe-area-inset-bottom)]:pb-[env(safe-area-inset-bottom)]"
+      className="fixed bottom-0 left-0 right-0 z-50 flex min-h-[72px] flex-col justify-center border-t border-slate-200 bg-white/95 px-2 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.08)] backdrop-blur supports-[padding:env(safe-area-inset-bottom)]:pb-[env(safe-area-inset-bottom)]"
       aria-label="Pagrindinė navigacija"
     >
-      <div className="flex flex-1 items-center justify-around gap-0 py-2">
+      <div className="flex flex-1 items-center justify-around gap-1 py-2">
       {navItems.map(({ href, label, icon }) => {
         const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
         return (
           <Link
             key={href}
             href={href}
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${
               isActive ? "bg-sky-100 text-sky-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
             }`}
             aria-label={label}
@@ -83,7 +83,7 @@ export function BottomNav() {
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2"
         aria-label="Perkrauti puslapį"
       >
         <svg viewBox="0 0 24 24" className={iconClass} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { getBabyInfo } from "@/lib/babyStorage";
+import { Button } from "@/components/Button";
 
 type WeightEntry = {
   id: string;
@@ -230,12 +231,12 @@ export default function SvorisPage() {
               {codeError && (
                 <p className="text-[11px] text-rose-600">{codeError}</p>
               )}
-              <button
+              <Button
                 type="submit"
-                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700"
+                className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700"
               >
                 Atrakinti
-              </button>
+              </Button>
             </form>
           </div>
         </div>
@@ -355,7 +356,7 @@ export default function SvorisPage() {
             </div>
 
             <form
-              className="mt-4 grid w-full gap-1.5 text-xs grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] sm:w-auto"
+              className="mt-4 grid w-full gap-1.5 text-xs grid-cols-[minmax(0,1fr),minmax(0,1fr)]"
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (!user) {
@@ -424,13 +425,13 @@ export default function SvorisPage() {
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
                 />
               </div>
-              <div className="flex items-end">
-                <button
+              <div className="mt-2">
+                <Button
                   type="submit"
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-rose-500 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm transition hover:bg-rose-600 sm:w-auto"
+                  className="w-full bg-rose-500 text-[11px] text-white hover:bg-rose-600"
                 >
                   Pridėti svorį
-                </button>
+                </Button>
               </div>
             </form>
 
@@ -444,14 +445,17 @@ export default function SvorisPage() {
                     className="flex items-end gap-2"
                     style={{
                       minWidth: `${Math.max(sortedWeightEntries.length * 48, 240)}px`,
-                      height: "200px",
+                      height: "220px",
                     }}
                   >
                     {sortedWeightEntries.map((w) => {
                       const { min, max } = chartScale;
                       const range = max - min || 1;
-                      const pct = Math.max(8, Math.min(100, ((w.weightGrams - min) / range) * 100));
-                      const barHeightPx = (pct / 100) * 180;
+                      const pct = Math.max(
+                        8,
+                        Math.min(100, ((w.weightGrams - min) / range) * 100)
+                      );
+                      const barHeightPx = (pct / 100) * 170;
                       const d = new Date(w.time);
                       const dateLabel = d.toLocaleDateString("lt-LT", {
                         month: "2-digit",
@@ -518,7 +522,7 @@ export default function SvorisPage() {
                       return (
                         <div
                           key={w.id}
-                          className="flex items-center justify-between rounded-lg bg-slate-50 px-2 py-1 shadow-sm ring-1 ring-slate-100"
+                          className="flex items-center justify-between rounded-xl bg-slate-50 px-2 py-1 shadow-sm ring-1 ring-slate-100"
                         >
                           <span className="font-mono text-[10px] text-slate-500">
                             {label}

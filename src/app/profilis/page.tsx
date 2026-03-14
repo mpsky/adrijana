@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { setBabyInfo } from "@/lib/babyStorage";
+import { Button } from "@/components/Button";
 
 export default function ProfilisPage() {
   const { user, isLoading, signOut } = useAuth();
@@ -241,17 +242,18 @@ export default function ProfilisPage() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <button
+            <Button
               type="button"
+              variant="secondary"
               onClick={async () => {
                 await signOut();
                 router.push("/");
                 router.refresh();
               }}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+              className="border border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               Atsijungti
-            </button>
+            </Button>
           </div>
         </section>
 
@@ -268,7 +270,7 @@ export default function ProfilisPage() {
           ) : (
             <form
               onSubmit={handleSaveBaby}
-              className="mt-4 flex flex-wrap items-end gap-3"
+              className="mt-4 flex flex-col gap-3"
             >
               <div className="min-w-0 flex-1 space-y-1">
                 <label className="block text-[11px] font-medium text-slate-600">
@@ -293,13 +295,13 @@ export default function ProfilisPage() {
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
                 />
               </div>
-              <button
+              <Button
                 type="submit"
                 disabled={!babyName.trim()}
-                className="shrink-0 rounded-xl bg-sky-600 px-4 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700 sm:w-auto"
               >
                 {babyId ? "Išsaugoti kūdikį" : "Registruoti kūdikį"}
-              </button>
+              </Button>
             </form>
           )}
           {babySaved && (
@@ -320,14 +322,14 @@ export default function ProfilisPage() {
             bendras istorijos dalijimasis).
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
+            <Button
               type="button"
               disabled={!babyId || isGeneratingInvite}
+              className="inline-flex items-center gap-1.5 bg-sky-600 px-4 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
               onClick={handleGenerateInvite}
-              className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-4 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isGeneratingInvite ? "Generuojama..." : "Sugeneruoti pakvietimo kodą"}
-            </button>
+            </Button>
             {!babyId && (
               <span className="text-[11px] text-slate-500">
                 Pirma užregistruok kūdikį aukščiau.

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
+import { Button } from "@/components/Button";
 
 type QuestionEntry = {
   id: string;
@@ -214,12 +215,12 @@ export default function KlausimaiPage() {
                 />
               </div>
               {codeError && <p className="text-[11px] text-rose-600">{codeError}</p>}
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700"
-              >
-                Atrakinti
-              </button>
+            <Button
+              type="submit"
+              className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700"
+            >
+              Atrakinti
+            </Button>
             </form>
           </div>
         </div>
@@ -274,13 +275,13 @@ export default function KlausimaiPage() {
               placeholder="Pridėk klausimą..."
               className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100"
             />
-            <button
+            <Button
               type="submit"
               disabled={!newQuestion.trim()}
-              className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="bg-amber-500 px-4 text-xs text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Pridėti klausimą
-            </button>
+            </Button>
           </form>
 
           <div className="mt-6 space-y-4">
