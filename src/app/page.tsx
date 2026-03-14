@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/authContext";
+import { getBabyInfo, setBabyInfo } from "@/lib/babyStorage";
 
 type EventType = "feeding" | "diaper" | "sleep";
 
@@ -38,15 +39,6 @@ type SleepEvent = {
 
 type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
 
-type WeightEntry = {
-  id: string;
-  time: string;
-  weightGrams: number;
-};
-
-const BABY_NAME = "Adrijana";
-const BABY_BIRTH_ISO = "2026-03-04T14:28:00";
-
 function formatTimeLabel(iso: string) {
   const d = new Date(iso);
   return d.toLocaleTimeString("lt-LT", {
@@ -67,13 +59,16 @@ function isToday(iso: string) {
 }
 
 export default function Home() {
+  const { user } = useAuth();
   const [events, setEvents] = useState<BabyEvent[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const [unlocked, setUnlocked] = useState<boolean>(false);
+  /** Ar vartotojas turi kūdikį (narystė baby_members). null = dar tikrinama. */
+  const [hasBaby, setHasBaby] = useState<boolean | null>(null);
   const [codeInput, setCodeInput] = useState<string>("");
   const [codeError, setCodeError] = useState<string>("");
+  const [isAcceptingCode, setIsAcceptingCode] = useState(false);
 
   const [feedingMethod, setFeedingMethod] = useState<FeedingMethod>("breast");
   const [amountMl, setAmountMl] = useState<string>("");
@@ -82,51 +77,51 @@ export default function Home() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<EventType | null>(null);
 
-  const [weightEntries, setWeightEntries] = useState<WeightEntry[]>([]);
-  const [weightInput, setWeightInput] = useState<string>("");
-  const [weightDateInput, setWeightDateInput] = useState<string>("");
-  const [weightExpanded, setWeightExpanded] = useState<boolean>(false);
+  const [babyInfo, setBabyInfo] = useState(() => getBabyInfo());
 
-  const sortedWeightEntries = useMemo(
-    () =>
-      [...weightEntries].sort(
-        (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()
-      ),
-    [weightEntries]
-  );
+  // Patikrinti, ar vartotojas turi kūdikį (narystė baby_members)
+  useEffect(() => {
+    if (!user) {
+      setHasBaby(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: member, error } = await supabase
+        .from("baby_members")
+        .select("baby_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setHasBaby(false);
+        return;
+      }
+      setHasBaby(!!member?.baby_id);
+      if (member?.baby_id && typeof window !== "undefined") {
+        const { data: babyRow } = await supabase
+          .from("babies")
+          .select("name, birth_iso")
+          .eq("id", member.baby_id)
+          .maybeSingle();
+        if (cancelled || !babyRow) return;
+        const name = (babyRow.name as string) ?? "";
+        const birthIso = (babyRow.birth_iso as string) ?? "";
+        if (birthIso) setBabyInfo({ name, birthIso });
+        window.localStorage.setItem("baby-diary-unlocked-v1", "true");
+      } else if (typeof window !== "undefined") {
+        window.localStorage.removeItem("baby-diary-unlocked-v1");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem(
-        "baby-diary-unlocked-v1"
-      );
-      if (stored === "true") {
-        setUnlocked(true);
-      }
-
-      const storedWeights = window.localStorage.getItem(
-        "baby-diary-weight-v1"
-      );
-      if (storedWeights) {
-        try {
-          const parsed = JSON.parse(storedWeights) as WeightEntry[];
-          if (Array.isArray(parsed)) {
-            setWeightEntries(
-              parsed
-                .filter(
-                  (w) =>
-                    typeof w.time === "string" &&
-                    typeof w.weightGrams === "number"
-                )
-                .sort(
-                  (a, b) =>
-                    new Date(a.time).getTime() - new Date(b.time).getTime()
-                )
-            );
-          }
-        } catch {
-        }
-      }
+      setBabyInfo(getBabyInfo());
     }
 
     async function loadInitialData() {
@@ -178,7 +173,7 @@ export default function Home() {
       setIsLoading(false);
     }
 
-    loadInitialData();
+    if (user) loadInitialData();
 
     const channel = supabase
       .channel("events-realtime")
@@ -275,7 +270,7 @@ export default function Home() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [user]);
 
   const todayEvents = useMemo(
     () => events.filter((e) => isToday(e.time)),
@@ -375,14 +370,6 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(
-      "baby-diary-weight-v1",
-      JSON.stringify(weightEntries)
-    );
-  }, [weightEntries]);
-
   const feedingGuidance = useMemo(() => {
     const nowMs = now.getTime();
     const threeHoursMs = 3 * 60 * 60 * 1_000;
@@ -446,7 +433,7 @@ export default function Home() {
   }, [events, now]);
 
   const babyAgeLabel = useMemo(() => {
-    const birth = new Date(BABY_BIRTH_ISO);
+    const birth = new Date(babyInfo.birthIso);
     if (Number.isNaN(birth.getTime())) return "";
 
     const diffMs = now.getTime() - birth.getTime();
@@ -472,7 +459,20 @@ export default function Home() {
     if (minutes > 0) parts.push(`${minutes} min.`);
     parts.push(`${seconds} s.`);
     return parts.join(" ");
-  }, [now]);
+  }, [now, babyInfo.birthIso]);
+
+  const babyBirthDisplay = useMemo(() => {
+    const d = new Date(babyInfo.birthIso);
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleString("lt-LT", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }, [babyInfo.birthIso]);
 
   const archiveByDay = useMemo(() => {
     const groups: Record<string, BabyEvent[]> = {};
@@ -534,6 +534,7 @@ export default function Home() {
 
       if (!activeSleep) {
         const payload = {
+          user_id: user?.id,
           type: "sleep",
           time: nowIso,
           notes: null,
@@ -600,6 +601,7 @@ export default function Home() {
 
         if (!active) {
           const startPayload = {
+            user_id: user?.id,
             type: "feeding",
             time: nowIso,
             notes: null,
@@ -660,6 +662,7 @@ export default function Home() {
         }
       } else {
         const payload = {
+          user_id: user?.id,
           type: "feeding",
           time: nowIso,
           notes: null,
@@ -725,6 +728,7 @@ export default function Home() {
       }
     } else {
       const payload = {
+        user_id: user?.id,
         type: "diaper",
         time: nowIso,
         notes: null,
@@ -800,75 +804,121 @@ export default function Home() {
       });
   }
 
+  async function handleAcceptInviteCode(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    const code = codeInput.trim().toUpperCase();
+    if (!code) {
+      setCodeError("Įvesk pakvietimo kodą.");
+      return;
+    }
+    setIsAcceptingCode(true);
+    setCodeError(null);
+    try {
+      const { data: inviteRow, error: inviteError } = await supabase
+        .from("baby_invites")
+        .select("id, code, baby_id, used_by, used_at, babies(name, birth_iso)")
+        .eq("code", code)
+        .maybeSingle();
+
+      if (inviteError) throw new Error(inviteError.message);
+      if (!inviteRow) {
+        setCodeError("Pakvietimas nerastas.");
+        return;
+      }
+      const invite = inviteRow as any;
+      if (invite.used_by) {
+        setCodeError("Šis pakvietimo kodas jau panaudotas.");
+        return;
+      }
+
+      const babyId = invite.baby_id as string;
+      const { error: memberError } = await supabase.from("baby_members").insert({
+        baby_id: babyId,
+        user_id: user.id,
+        role: "parent",
+      });
+      if (memberError && memberError.code !== "23505") throw memberError;
+
+      await supabase
+        .from("baby_invites")
+        .update({
+          used_by: user.id,
+          used_at: new Date().toISOString(),
+        })
+        .eq("id", invite.id);
+
+      const baby = invite.babies;
+      const birthIso = baby?.birth_iso ?? null;
+      if (birthIso) {
+        setBabyInfo({
+          name: (baby?.name as string) ?? "",
+          birthIso,
+        });
+      }
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("baby-diary-unlocked-v1", "true");
+      }
+      setHasBaby(true);
+      setCodeInput("");
+      setCodeError(null);
+      setBabyInfo(getBabyInfo());
+    } catch (err: any) {
+      setCodeError(err.message ?? "Nepavyko priimti pakvietimo.");
+    } finally {
+      setIsAcceptingCode(false);
+    }
+  }
+
+  const showInviteForm = user && hasBaby === false;
+  const showDiary = user && hasBaby === true;
+  const showLoadingBaby = user && hasBaby === null;
+
   return (
     <div className="min-h-screen text-slate-900">
-      {!unlocked && (
+      {showLoadingBaby && (
+        <div className="flex min-h-screen items-center justify-center bg-slate-50">
+          <p className="text-sm text-slate-500">Kraunama...</p>
+        </div>
+      )}
+      {showInviteForm && (
         <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-sky-50 to-rose-50 px-4">
           <div className="w-full max-w-sm rounded-3xl bg-white/95 p-6 shadow-lg ring-1 ring-slate-100">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                  aria-hidden="true"
-                >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
                   <path
-                    d="M8 11V8a4 4 0 0 1 8 0v3"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                  <rect
-                    x="5"
-                    y="11"
-                    width="14"
-                    height="9"
-                    rx="2"
+                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
                     fill="currentColor"
-                    opacity="0.9"
                   />
                 </svg>
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  Užraktas
+                  Prisijunk prie kūdikio
                 </p>
                 <p className="text-sm font-medium text-slate-800">
-                  Įvesk prieigos kodą
+                  Įvesk pakvietimo kodą, kurį gavai nuo kūdikio savininko
                 </p>
               </div>
             </div>
-            <form
-              className="mt-4 space-y-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (codeInput.trim() === "1337") {
-                  setUnlocked(true);
-                  setCodeError("");
-                  if (typeof window !== "undefined") {
-                    window.localStorage.setItem("baby-diary-unlocked-v1", "true");
-                  }
-                } else {
-                  setCodeError("Neteisingas kodas. Bandyk dar kartą.");
-                }
-              }}
-            >
+            <form className="mt-4 space-y-3" onSubmit={handleAcceptInviteCode}>
               <div className="space-y-1">
                 <label className="text-[11px] font-medium text-slate-600">
-                  Kodas
+                  Pakvietimo kodas
                 </label>
                 <input
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={4}
+                  type="text"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  maxLength={20}
                   value={codeInput}
                   onChange={(e) => {
                     setCodeInput(e.target.value);
                     if (codeError) setCodeError("");
                   }}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-[16px] tracking-[0.5em] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
-                  placeholder="••••"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-[16px] tracking-wider outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                  placeholder="pvz. ABCD1234"
                 />
               </div>
               {codeError && (
@@ -876,15 +926,22 @@ export default function Home() {
               )}
               <button
                 type="submit"
-                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700"
+                disabled={isAcceptingCode}
+                className="inline-flex w-full items-center justify-center rounded-xl bg-sky-600 px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-70"
               >
-                Atrakinti
+                {isAcceptingCode ? "Prijungiama..." : "Prisijungti prie kūdikio"}
               </button>
             </form>
+            <p className="mt-4 text-center text-[11px] text-slate-500">
+              Neturi kodo?{" "}
+              <a href="/profilis" className="text-sky-600 underline">
+                Užregistruok kūdikį profilyje
+              </a>
+            </p>
           </div>
         </div>
       )}
-      {unlocked && (
+      {showDiary && (
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -910,7 +967,7 @@ export default function Home() {
                   </svg>
                 </span>
                 <span className="flex-1 truncate">
-                  <span>2026-03-04 14:28</span>
+                  <span>{babyBirthDisplay}</span>
                   <span className="mx-1.5">•</span>
                   <span>{babyAgeLabel}</span>
                 </span>
@@ -937,7 +994,7 @@ export default function Home() {
                     strokeLinecap="round"
                   />
                 </svg>
-                <span>gim. 2026-03-04 14:28</span>
+                <span>gim. {babyBirthDisplay}</span>
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-indigo-700 ring-1 ring-indigo-100">
                 <svg
@@ -976,168 +1033,14 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="rounded-3xl bg-white/95 p-3 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-100">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path
-                    d="M8 4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v1.5A7.5 7.5 0 0 1 11.5 16H11L8 20l-3-4H4.5A3.5 3.5 0 0 1 1 12.5V8a2 2 0 0 1 2-2h1Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                Kūdikio svoris
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setWeightExpanded((v) => !v)}
-              className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
-            >
-              <span>{weightExpanded ? "Slėpti" : "Rodyti"}</span>
-              <span className="text-[9px]">
-                {weightExpanded ? "▴" : "▾"}
-              </span>
-            </button>
-          </div>
-
-          {weightExpanded && (
-            <form
-              className="grid w-full gap-1.5 text-xs grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] sm:w-auto"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const weight = Number(weightInput.replace(",", "."));
-                if (!weight || !Number.isFinite(weight)) return;
-                const timeIso = weightDateInput
-                  ? new Date(weightDateInput).toISOString()
-                  : new Date().toISOString();
-                const entry: WeightEntry = {
-                  id: `${timeIso}-${Math.random().toString(36).slice(2, 8)}`,
-                  time: timeIso,
-                  weightGrams: Math.round(weight),
-                };
-                setWeightEntries((prev) => [...prev, entry]);
-                setWeightInput("");
-              }}
-            >
-              <div className="space-y-0.5">
-                <label className="block text-[10px] font-medium text-slate-600">
-                  Svoris (g)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="decimal"
-                  value={weightInput}
-                  onChange={(e) => setWeightInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
-                  placeholder="pvz. 3200"
-                />
-              </div>
-              <div className="space-y-0.5">
-                <label className="block text-[10px] font-medium text-slate-600">
-                  Data
-                </label>
-                <input
-                  type="datetime-local"
-                  value={weightDateInput}
-                  onChange={(e) => setWeightDateInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] shadow-sm outline-none transition focus:border-rose-400 focus:bg-white focus:ring-2 focus:ring-rose-100"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  type="submit"
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-rose-500 px-3 py-1.5 text-[11px] font-medium text-white shadow-sm transition hover:bg-rose-600 sm:w-auto"
-                >
-                  Pridėti svorį
-                </button>
-              </div>
-            </form>
-          )}
-
-          {weightExpanded && (
-          <div className="mt-2">
-            <div className="max-h-32 space-y-1 overflow-y-auto pr-1 text-[11px] text-slate-600">
-              {sortedWeightEntries.length === 0 ? (
-                <p className="text-slate-400">
-                  Dar nėra svorio įrašų. Pradėk nuo gimimo ar išleidimo namo
-                  svorio.
-                </p>
-              ) : (
-                sortedWeightEntries
-                  .slice()
-                  .reverse()
-                  .map((w, idx, arr) => {
-                    const current = w.weightGrams;
-                    const prev =
-                      idx === arr.length - 1
-                        ? undefined
-                        : arr[idx + 1].weightGrams;
-                    const diff =
-                      prev !== undefined ? current - prev : undefined;
-                    const d = new Date(w.time);
-                    const label = d.toLocaleDateString("lt-LT", {
-                      month: "2-digit",
-                      day: "2-digit",
-                    });
-                    return (
-                      <div
-                        key={w.id}
-                        className="flex items-center justify-between rounded-lg bg-slate-50 px-2 py-1 shadow-sm ring-1 ring-slate-100"
-                      >
-                        <span className="font-mono text-[10px] text-slate-500">
-                          {label}
-                        </span>
-                        <span className="text-[11px] font-medium text-slate-800">
-                          {current} g
-                          {diff != null && diff !== 0 && (
-                            <span
-                              className={`ml-1 font-normal ${
-                                diff > 0
-                                  ? "text-emerald-600"
-                                  : "text-rose-600"
-                              }`}
-                            >
-                              {diff > 0 ? "+" : ""}
-                              {diff} g
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-          </div>
-          )}
-        </section>
-
         <section className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
             {/* Šiandien – maitinimas ir miegas */}
             <div className="rounded-2xl bg-white/90 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-sky-600 ring-1 ring-sky-100">
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M7 3h10v3a4 4 0 0 1-.4 1.8L14 14v5a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V3Z"
-                      fill="currentColor"
-                      opacity="0.8"
-                    />
-                    <path
-                      d="M15 3h2a2 2 0 0 1 2 2v.5a2 2 0 0 1-2 2H15"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
+                  <svg viewBox="0 0 64 64" className="h-5 w-5" aria-hidden="true" fill="currentColor">
+                    <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
                   </svg>
                 </div>
                 <div>
@@ -1210,22 +1113,8 @@ export default function Home() {
             <div className="rounded-2xl bg-white/90 p-4 shadow-sm ring-1 ring-emerald-100 backdrop-blur">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M4 7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v4.5A4.5 4.5 0 0 1 15.5 16h-.75L12 19.5 9.25 16H8.5A4.5 4.5 0 0 1 4 11.5V7Z"
-                      fill="currentColor"
-                      opacity="0.9"
-                    />
-                    <path
-                      d="M7 7h3M14 7h3"
-                      stroke="#ecfdf5"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
+                  <svg viewBox="0 0 64 64" className="h-5 w-5" aria-hidden="true" fill="currentColor">
+                    <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
                   </svg>
                 </div>
                 <div>
@@ -1266,15 +1155,10 @@ export default function Home() {
             <div className="rounded-2xl bg-slate-950 text-slate-50 p-4 shadow-sm ring-1 ring-slate-900/40 backdrop-blur">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sky-200 ring-1 ring-sky-500/40">
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M4 11a8 8 0 0 1 13.5-5.5A7 7 0 0 0 12 19h-.5A7.5 7.5 0 0 1 4 11Z"
-                      fill="currentColor"
-                    />
+                  <svg viewBox="0 0 64 64" className="h-5 w-5" aria-hidden="true" fill="currentColor">
+                    <path d="M57.94,15.09,46.31,8.58h0l-.14-.08s0,0-.07,0l-.16-.07L37.44,6h0a1.06,1.06,0,0,0-.31,0h-.14a1,1,0,0,0-.37.17h0a7.44,7.44,0,0,1-9.12,0h0A1,1,0,0,0,27.06,6h-.14a1.08,1.08,0,0,0-.31,0h-.05L18.07,8.4h0a.85.85,0,0,0-.22.09L6.06,15.09a1,1,0,0,0-.39,1.35l5.19,9.44a1,1,0,0,0,1,.51L16.66,26c-.78,6.1-1.16,26.13-1.21,28.6a1,1,0,0,0,.79,1L27.09,58a1,1,0,0,0,1.13-.58L32,48.71l3.78,8.69a1,1,0,0,0,.92.6l.21,0,10.85-2.36a1,1,0,0,0,.79-1c0-2.47-.43-22.5-1.21-28.6l4.85.37a1,1,0,0,0,1-.51l5.19-9.44A1,1,0,0,0,57.94,15.09ZM36.41,8.65c.13,1.43.11,3.63-1,5A4.06,4.06,0,0,1,32,15.05a4.06,4.06,0,0,1-3.41-1.37c-1.11-1.4-1.13-3.6-1-5A9.43,9.43,0,0,0,36.41,8.65ZM12.3,24.35l-4.4-8,10.16-5.69c3.85,5.65.29,11.77-.74,13.3Zm25,31.5L32.92,45.8a1,1,0,0,0-1.84,0L26.71,55.85l-9.24-2c.15-7.72.63-25.52,1.33-28.49a18.37,18.37,0,0,0,2.44-5.22A12.32,12.32,0,0,0,20,9.94l5.63-1.56c-.17,1.75-.15,4.57,1.41,6.53A5.62,5.62,0,0,0,31,17v9.48H28.74a1,1,0,1,0,0,2H32a1,1,0,0,0,1-1V17a5.62,5.62,0,0,0,4-2.08c1.56-2,1.58-4.78,1.41-6.53L44.05,10a12.29,12.29,0,0,0-1.26,10.18,17.82,17.82,0,0,0,2.4,5.15c.71,2.78,1.19,20.78,1.34,28.56ZM51.7,24.35l-5-.38c-1-1.53-4.54-7.7-.75-13.3L56.1,16.35Z" />
+                    <path d="M35.19,18.89a.87.87,0,1,0,.87.86A.87.87,0,0,0,35.19,18.89Z" />
+                    <path d="M35.19,23.46a.87.87,0,1,0,.87.86A.86.86,0,0,0,35.19,23.46Z" />
                   </svg>
                 </div>
                 <div>
@@ -1363,12 +1247,11 @@ export default function Home() {
         <section className="grid gap-3 md:grid-cols-2">
           <div className="rounded-2xl bg-sky-50/80 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path
-                    d="M7 4h10a2 2 0 0 1 2 2v1.5A2.5 2.5 0 0 1 16.5 10H15l-2 2-2-2H7A2.5 2.5 0 0 1 4.5 7.5V6A2 2 0 0 1 7 4Z"
-                    fill="currentColor"
-                  />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 17V11" />
+                  <circle cx="12" cy="8" r="1" fill="currentColor" />
                 </svg>
               </div>
               <div>
@@ -1413,12 +1296,11 @@ export default function Home() {
 
           <div className="rounded-2xl bg-amber-50/80 p-4 shadow-sm ring-1 ring-amber-100 backdrop-blur">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                  <path
-                    d="M6 5.5A2.5 2.5 0 0 1 8.5 3h7A2.5 2.5 0 0 1 18 5.5V9a6 6 0 0 1-6 6H9.5L7 17.5V15A6 6 0 0 1 6 9Z"
-                    fill="currentColor"
-                  />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M12 17V11" />
+                  <circle cx="11" cy="9" r="1" fill="currentColor" />
+                  <path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z" />
                 </svg>
               </div>
               <div>
@@ -1458,11 +1340,8 @@ export default function Home() {
               <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-3 shadow-sm">
                 <div className="flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-700">
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                      <path
-                        d="M9 3h6v3.5a3.5 3.5 0 0 1-.35 1.53L13 11v7a2 2 0 0 1-2 2H9Z"
-                        fill="currentColor"
-                      />
+                    <svg viewBox="0 0 64 64" className="h-4 w-4" aria-hidden="true" fill="currentColor">
+                      <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
                     </svg>
                   </div>
                   <div>
@@ -1573,15 +1452,8 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="mr-1.5 h-3.5 w-3.5"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M5 12.5A2.5 2.5 0 0 1 7.5 10H11V5.5A2.5 2.5 0 0 1 13.5 3h.5A2.5 2.5 0 0 1 16.5 5.5V10H19a2.5 2.5 0 0 1 0 5h-2.5V18.5A2.5 2.5 0 0 1 14 21h-.5A2.5 2.5 0 0 1 11 18.5V15H7.5A2.5 2.5 0 0 1 5 12.5Z"
-                        fill="currentColor"
-                      />
+                    <svg viewBox="0 0 64 64" className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" fill="currentColor">
+                      <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
                     </svg>
                     {feedingMethod === "breast"
                       ? activeBreastFeeding
@@ -1599,11 +1471,8 @@ export default function Home() {
             <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 shadow-sm">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                    <path
-                      d="M5 7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v3.5A4.5 4.5 0 0 1 14.5 15H14l-2 2-2-2h-.5A4.5 4.5 0 0 1 5 10.5Z"
-                      fill="currentColor"
-                    />
+                  <svg viewBox="0 0 64 64" className="h-4 w-4" aria-hidden="true" fill="currentColor">
+                    <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
                   </svg>
                 </div>
                 <div>
@@ -1670,15 +1539,8 @@ export default function Home() {
                   </>
                 ) : (
                   <>
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="mr-1.5 h-3.5 w-3.5"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M6 6h12v5.5A3.5 3.5 0 0 1 14.5 15H14l-2 2-2-2h-.5A3.5 3.5 0 0 1 6 11.5Z"
-                        fill="currentColor"
-                      />
+                    <svg viewBox="0 0 64 64" className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" fill="currentColor">
+                      <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
                     </svg>
                     {editingId && editingType === "diaper"
                       ? "Atnaujinti sauskelnes"
@@ -1692,11 +1554,8 @@ export default function Home() {
               <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 shadow-sm">
                 <div className="flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100 text-purple-700">
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                      <path
-                        d="M9 4.5A6.5 6.5 0 1 0 19.5 15 5.5 5.5 0 0 1 9 4.5Z"
-                        fill="currentColor"
-                      />
+                    <svg viewBox="0 0 64 64" className="h-4 w-4" aria-hidden="true" fill="currentColor">
+                      <path d="M48.9,30.65a11,11,0,1,0-18.76-7.42c0,1-1.21,3-2.33,4.39-1.44-2.48-1.84-4.49-1.64-5.48a3.47,3.47,0,0,0-.52-2.62,3.49,3.49,0,0,0-4.85-1,3.46,3.46,0,0,0-1.49,2.23A14.19,14.19,0,0,0,20.68,29a11.64,11.64,0,0,0-5.37,3.06A11.75,11.75,0,0,0,31.93,48.68,11.58,11.58,0,0,0,35,43.16a19.63,19.63,0,0,0,7.51,1.6,3.5,3.5,0,1,0,0-7h0a13,13,0,0,1-6.08-1.65c1.33-1.08,3.34-2.29,4.22-2.26A11,11,0,0,0,48.9,30.65ZM29.33,39.76a5.74,5.74,0,1,1-5.26-5.12s.07,0,.11,0a31.62,31.62,0,0,0,2.45,2.74A30.28,30.28,0,0,0,29.33,39.76Zm1.19,7.51a9.75,9.75,0,1,1-8.91-16.43c.34.61.71,1.22,1.13,1.85a7.74,7.74,0,1,0,8.58,8.5c.63.41,1.24.76,1.85,1.09A9.69,9.69,0,0,1,30.52,47.27Zm12-7.51h0a1.51,1.51,0,0,1,1.06.43,1.51,1.51,0,0,1-1.06,2.57C39.66,42.76,34,41.87,28,36s-7.39-11.71-6.77-14.79a1.47,1.47,0,0,1,.64-.95,1.44,1.44,0,0,1,.82-.25,1.53,1.53,0,0,1,.3,0,1.47,1.47,0,0,1,1,.63,1.51,1.51,0,0,1,.22,1.13c-.49,2.46,1.16,7.29,5.95,12.08C35.32,39,40.13,39.76,42.54,39.76Zm-11-7.34A26.49,26.49,0,0,1,29,29.36c1.25-1.37,3.25-4.29,3.19-6.2a9,9,0,0,1,18-.79,9,9,0,0,1-9.35,9.49c-2-.09-4.86,2-6.1,3.15A22.65,22.65,0,0,1,31.58,32.42Z" />
                     </svg>
                   </div>
                   <div>
@@ -1751,15 +1610,8 @@ export default function Home() {
                     </>
                   ) : (
                     <>
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="mr-1.5 h-3.5 w-3.5"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M9 4.5A6.5 6.5 0 1 0 19.5 15 5.5 5.5 0 0 1 9 4.5Z"
-                          fill="currentColor"
-                        />
+                      <svg viewBox="0 0 64 64" className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" fill="currentColor">
+                        <path d="M48.9,30.65a11,11,0,1,0-18.76-7.42c0,1-1.21,3-2.33,4.39-1.44-2.48-1.84-4.49-1.64-5.48a3.47,3.47,0,0,0-.52-2.62,3.49,3.49,0,0,0-4.85-1,3.46,3.46,0,0,0-1.49,2.23A14.19,14.19,0,0,0,20.68,29a11.64,11.64,0,0,0-5.37,3.06A11.75,11.75,0,0,0,31.93,48.68,11.58,11.58,0,0,0,35,43.16a19.63,19.63,0,0,0,7.51,1.6,3.5,3.5,0,1,0,0-7h0a13,13,0,0,1-6.08-1.65c1.33-1.08,3.34-2.29,4.22-2.26A11,11,0,0,0,48.9,30.65ZM29.33,39.76a5.74,5.74,0,1,1-5.26-5.12s.07,0,.11,0a31.62,31.62,0,0,0,2.45,2.74A30.28,30.28,0,0,0,29.33,39.76Zm1.19,7.51a9.75,9.75,0,1,1-8.91-16.43c.34.61.71,1.22,1.13,1.85a7.74,7.74,0,1,0,8.58,8.5c.63.41,1.24.76,1.85,1.09A9.69,9.69,0,0,1,30.52,47.27Zm12-7.51h0a1.51,1.51,0,0,1,1.06.43,1.51,1.51,0,0,1-1.06,2.57C39.66,42.76,34,41.87,28,36s-7.39-11.71-6.77-14.79a1.47,1.47,0,0,1,.64-.95,1.44,1.44,0,0,1,.82-.25,1.53,1.53,0,0,1,.3,0,1.47,1.47,0,0,1,1,.63,1.51,1.51,0,0,1,.22,1.13c-.49,2.46,1.16,7.29,5.95,12.08C35.32,39,40.13,39.76,42.54,39.76Zm-11-7.34A26.49,26.49,0,0,1,29,29.36c1.25-1.37,3.25-4.29,3.19-6.2a9,9,0,0,1,18-.79,9,9,0,0,1-9.35,9.49c-2-.09-4.86,2-6.1,3.15A22.65,22.65,0,0,1,31.58,32.42Z" />
                       </svg>
                       Pradėti / baigti miegą
                     </>
@@ -1773,36 +1625,6 @@ export default function Home() {
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                   Šiandienos įrašai
                 </p>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href="/archive"
-                    className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700 shadow-sm transition hover:bg-sky-600 hover:text-white"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-3.5 w-3.5"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M6 5.5A1.5 1.5 0 0 1 7.5 4h9A1.5 1.5 0 0 1 18 5.5V17a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2Z"
-                        fill="currentColor"
-                      />
-                      <path
-                        d="M9 8h6M9 11h3"
-                        stroke="#e5f0ff"
-                        strokeWidth="1.4"
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    ARCHYVAS
-                  </Link>
-                  <a
-                    href="/admin"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1 text-[11px] font-medium text-white shadow-sm transition hover:bg-slate-800"
-                  >
-                    NUSTATYMAI
-                  </a>
-                </div>
               </div>
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {todayEvents.length === 0 ? (

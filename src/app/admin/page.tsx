@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/authContext";
+import {
+  setBabyInfo,
+  toLocalDateTimeInputValue,
+  fromLocalDateTimeInputValue,
+} from "@/lib/babyStorage";
 
 type EventType = "feeding" | "diaper" | "sleep";
 type FeedingMethod = "breast" | "formula" | "pumped";
@@ -32,23 +39,6 @@ type SleepEvent = {
 
 type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
 
-function toLocalDateTimeInputValue(iso: string) {
-  const d = new Date(iso);
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const mi = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-}
-
-function fromLocalDateTimeInputValue(value: string) {
-  // value is in local time; create Date then toISOString for UTC storage
-  const d = new Date(value);
-  return d.toISOString();
-}
-
 function formatTimeLabel(iso: string) {
   const d = new Date(iso);
   return d.toLocaleTimeString("lt-LT", {
@@ -59,6 +49,8 @@ function formatTimeLabel(iso: string) {
 }
 
 export default function AdminPage() {
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
   const [events, setEvents] = useState<BabyEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -75,7 +67,129 @@ export default function AdminPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const [babyId, setBabyId] = useState<string | null>(null);
+  const [babyName, setBabyName] = useState("");
+  const [babyBirthInput, setBabyBirthInput] = useState("");
+  const [babySaved, setBabySaved] = useState(false);
+
   useEffect(() => {
+    if (!user) return;
+    async function loadBaby() {
+      // Rasti kūdikį, su kuriuo susietas šis vartotojas
+      const { data: member } = await supabase
+        .from("baby_members")
+        .select("baby_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (!member?.baby_id) {
+        // Nėra kūdikio – paliekame tuščią formą
+        setBabyId(null);
+        setBabyName("");
+        setBabyBirthInput("");
+        return;
+      }
+
+      const { data: baby } = await supabase
+        .from("babies")
+        .select("*")
+        .eq("id", member.baby_id)
+        .maybeSingle();
+
+      if (!baby) return;
+
+      setBabyId(baby.id as string);
+      setBabyName((baby.name as string) ?? "");
+      setBabyBirthInput(
+        baby.birth_iso
+          ? toLocalDateTimeInputValue(baby.birth_iso as string)
+          : ""
+      );
+
+      // Sinchronizuojame su localStorage, kad pagrindinis ir svoris matytų tuos pačius duomenis
+      if (baby.birth_iso) {
+        setBabyInfo({
+          name: (baby.name as string) ?? "",
+          birthIso: baby.birth_iso as string,
+        });
+      }
+    }
+
+    loadBaby();
+  }, [user]);
+
+  async function handleSaveBaby(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user) return;
+    const name = babyName.trim();
+    if (!name) return;
+
+    const birthIso = fromLocalDateTimeInputValue(babyBirthInput);
+
+    try {
+      if (babyId) {
+        // Atnaujinti esamą kūdikį
+        const { data, error } = await supabase
+          .from("babies")
+          .update({
+            name,
+            birth_iso: birthIso,
+          })
+          .eq("id", babyId)
+          .select("*")
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (data) {
+          setBabyInfo({
+            name: (data.name as string) ?? name,
+            birthIso: (data.birth_iso as string) ?? birthIso,
+          });
+        }
+      } else {
+        // Sukurti naują kūdikį ir narystę
+        const { data, error } = await supabase
+          .from("babies")
+          .insert({
+            name,
+            birth_iso: birthIso,
+            created_by: user.id,
+          })
+          .select("*")
+          .single();
+
+        if (error) throw error;
+
+        const newBabyId = data.id as string;
+        setBabyId(newBabyId);
+
+        await supabase.from("baby_members").insert({
+          baby_id: newBabyId,
+          user_id: user.id,
+          role: "parent",
+        });
+
+        setBabyInfo({
+          name: (data.name as string) ?? name,
+          birthIso: (data.birth_iso as string) ?? birthIso,
+        });
+      }
+
+      setBabySaved(true);
+      setTimeout(() => setBabySaved(false), 2000);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  useEffect(() => {
+    if (!authLoading && !user) router.replace("/prisijungti");
+  }, [authLoading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
     async function load() {
       setIsLoading(true);
       const { data, error } = await supabase
@@ -126,7 +240,7 @@ export default function AdminPage() {
     }
 
     load();
-  }, []);
+  }, [user]);
 
   const isEditing = !!editingId;
 
@@ -200,6 +314,7 @@ export default function AdminPage() {
           const isAmountBased =
             feedingMethod === "formula" || feedingMethod === "pumped";
           const payload = {
+            user_id: user?.id,
             type: "feeding",
             time: timeIso,
             feeding_method: feedingMethod,
@@ -232,6 +347,7 @@ export default function AdminPage() {
           setEvents((prev) => [newEvent, ...prev]);
         } else if (type === "diaper") {
           const payload = {
+            user_id: user?.id,
             type: "diaper",
             time: timeIso,
             diaper_kind: diaperKind,
@@ -258,6 +374,7 @@ export default function AdminPage() {
           setEvents((prev) => [newEvent, ...prev]);
         } else {
           const payload = {
+            user_id: user?.id,
             type: "sleep",
             time: timeIso,
             sleep_end: sleepEndInput
@@ -406,9 +523,17 @@ export default function AdminPage() {
     }
   }
 
+  if (authLoading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-slate-500">Kraunama...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-4 px-3 py-4 sm:px-6 sm:py-8">
+    <div className="min-h-screen text-slate-900">
+      <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <header className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">
@@ -418,16 +543,42 @@ export default function AdminPage() {
               Pridėk senų dienų įrašus, taisyk ar trink jau esančius.
             </p>
           </div>
-          <a
-            href="/"
-            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-sm transition hover:bg-slate-800 sm:px-3"
-          >
-            <span>← Atgal į pagrindinį</span>
-          </a>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <a
+              href="/profilis"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 sm:px-3"
+            >
+              Profilis
+            </a>
+            <a
+              href="/"
+              className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-2.5 py-1.5 text-[11px] font-medium text-white shadow-sm transition hover:bg-slate-800 sm:px-3"
+            >
+              ← Pagrindinis
+            </a>
+          </div>
         </header>
 
-        <section className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <div className="space-y-3 rounded-3xl bg-white/95 p-3 shadow-sm ring-1 ring-slate-100 sm:p-4">
+        <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Kūdikio duomenys
+            </p>
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Kūdikio registracija ir redagavimas perkeltas į{" "}
+            <a
+              href="/profilis"
+              className="font-medium text-sky-600 underline-offset-2 hover:underline"
+            >
+              profilio puslapį
+            </a>
+            . Šiame lange gali tvarkyti tik įrašus.
+          </p>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,1fr)]">
+          <div className="min-w-0 space-y-4 rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -441,55 +592,14 @@ export default function AdminPage() {
                 <button
                   type="button"
                   onClick={resetForm}
-                  className="text-[11px] font-medium text-slate-500 underline-offset-2 hover:underline"
+                  className="shrink-0 text-[11px] font-medium text-slate-500 underline-offset-2 hover:underline"
                 >
                   Atšaukti redagavimą
                 </button>
               )}
             </div>
 
-            <div className="grid gap-3 text-xs sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-medium text-slate-600">
-                  Tipas
-                </label>
-                <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-50 p-1 ring-1 ring-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setType("feeding")}
-                    className={`rounded-xl px-1.5 py-1.5 text-[10px] font-medium sm:text-[11px] ${
-                      type === "feeding"
-                        ? "bg-sky-600 text-white shadow-sm"
-                        : "text-slate-600"
-                    }`}
-                  >
-                    Maitinimas
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setType("diaper")}
-                    className={`rounded-xl px-1.5 py-1.5 text-[10px] font-medium sm:text-[11px] ${
-                      type === "diaper"
-                        ? "bg-amber-500 text-white shadow-sm"
-                        : "text-slate-600"
-                    }`}
-                  >
-                    Sauskelnės
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setType("sleep")}
-                    className={`rounded-xl px-1.5 py-1.5 text-[10px] font-medium sm:text-[11px] ${
-                      type === "sleep"
-                        ? "bg-indigo-600 text-white shadow-sm"
-                        : "text-slate-600"
-                    }`}
-                  >
-                    Miegas
-                  </button>
-                </div>
-              </div>
-
+            <div className="space-y-4 text-xs">
               <div className="space-y-1.5">
                 <label className="block text-[11px] font-medium text-slate-600">
                   Data ir laikas
@@ -498,25 +608,66 @@ export default function AdminPage() {
                   type="datetime-local"
                   value={timeInput}
                   onChange={(e) => setTimeInput(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Tipas
+                </label>
+                <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setType("feeding")}
+                    className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                      type === "feeding"
+                        ? "bg-sky-600 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    Maitinimas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setType("diaper")}
+                    className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                      type === "diaper"
+                        ? "bg-amber-500 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    Sauskelnės
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setType("sleep")}
+                    className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                      type === "sleep"
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    Miegas
+                  </button>
+                </div>
               </div>
             </div>
 
             {type === "feeding" && (
-              <div className="grid gap-3 text-xs sm:grid-cols-2">
+              <div className="space-y-4 text-xs">
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-medium text-slate-600">
                     Maitinimo būdas
                   </label>
-                  <div className="inline-flex w-full gap-1 rounded-2xl bg-slate-50 p-1 ring-1 ring-slate-200">
+                  <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium">
                     <button
                       type="button"
                       onClick={() => setFeedingMethod("formula")}
-                      className={`flex-1 rounded-xl px-2 py-1.5 text-[11px] font-medium ${
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
                         feedingMethod === "formula"
                           ? "bg-sky-600 text-white shadow-sm"
-                          : "text-slate-600"
+                          : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       Mišinėlis (ml)
@@ -524,10 +675,10 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => setFeedingMethod("breast")}
-                      className={`flex-1 rounded-xl px-2 py-1.5 text-[11px] font-medium ${
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
                         feedingMethod === "breast"
                           ? "bg-emerald-600 text-white shadow-sm"
-                          : "text-slate-600"
+                          : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       Krūtimi (min)
@@ -535,10 +686,10 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => setFeedingMethod("pumped")}
-                      className={`flex-1 rounded-xl px-2 py-1.5 text-[11px] font-medium ${
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
                         feedingMethod === "pumped"
                           ? "bg-sky-600 text-white shadow-sm"
-                          : "text-slate-600"
+                          : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       Mamos pienas (ml)
@@ -556,7 +707,8 @@ export default function AdminPage() {
                       min={0}
                       value={amountMl}
                       onChange={(e) => setAmountMl(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                      placeholder="pvz. 90"
+                      className="w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                     />
                   </div>
                 ) : (
@@ -569,7 +721,7 @@ export default function AdminPage() {
                       min={0}
                       value={durationMinutes}
                       onChange={(e) => setDurationMinutes(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
+                      className="w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                     />
                   </div>
                 )}
@@ -577,18 +729,18 @@ export default function AdminPage() {
             )}
 
             {type === "diaper" && (
-              <div className="space-y-1.5 text-xs">
+              <div className="space-y-1.5">
                 <label className="block text-[11px] font-medium text-slate-600">
                   Sauskelnės
                 </label>
-                <div className="inline-flex w-full gap-1 rounded-2xl bg-slate-50 p-1 ring-1 ring-slate-200">
+                <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium">
                   <button
                     type="button"
                     onClick={() => setDiaperKind("wet")}
-                    className={`flex-1 rounded-xl px-2 py-1.5 text-[11px] font-medium ${
+                    className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
                       diaperKind === "wet"
                         ? "bg-sky-500 text-white shadow-sm"
-                        : "text-slate-600"
+                        : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
                     Šlapias
@@ -596,10 +748,10 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => setDiaperKind("dirty")}
-                    className={`flex-1 rounded-xl px-2 py-1.5 text-[11px] font-medium ${
+                    className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
                       diaperKind === "dirty"
                         ? "bg-amber-500 text-white shadow-sm"
-                        : "text-slate-600"
+                        : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
                     Purvinas
@@ -607,10 +759,10 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => setDiaperKind("both")}
-                    className={`flex-1 rounded-xl px-2 py-1.5 text-[11px] font-medium ${
+                    className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
                       diaperKind === "both"
                         ? "bg-emerald-500 text-white shadow-sm"
-                        : "text-slate-600"
+                        : "text-slate-600 hover:bg-slate-100"
                     }`}
                   >
                     Abu
@@ -620,18 +772,16 @@ export default function AdminPage() {
             )}
 
             {type === "sleep" && (
-              <div className="grid gap-3 text-xs sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-medium text-slate-600">
-                    Miego pabaiga (nebūtina)
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={sleepEndInput}
-                    onChange={(e) => setSleepEndInput(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-medium text-slate-600">
+                  Miego pabaiga (nebūtina)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={sleepEndInput}
+                  onChange={(e) => setSleepEndInput(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                />
               </div>
             )}
 
@@ -662,19 +812,19 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="space-y-3 rounded-3xl bg-white/95 p-3 shadow-sm ring-1 ring-slate-100 sm:p-4">
-            <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <div className="min-w-0 space-y-3 rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Visi įrašai (admin)
               </p>
               {isLoading && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-100">
+                <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-100">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
                   Kraunama...
                 </span>
               )}
             </div>
-            <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1 text-[11px] sm:text-xs">
+            <div className="max-h-[420px] min-w-0 space-y-3 overflow-y-auto pr-1 text-[11px] sm:text-xs">
               {sortedByDay.length === 0 && !isLoading && (
                 <p className="text-[11px] text-slate-500">
                   Nėra įrašų.
@@ -704,14 +854,14 @@ export default function AdminPage() {
                       .map((e) => (
                         <div
                           key={e.id}
-                          className="flex items-start justify-between gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm ring-1 ring-slate-100"
+                          className="flex min-w-0 items-center justify-between gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm ring-1 ring-slate-100"
                         >
-                          <div className="min-w-0 space-y-0.5">
-                            <p className="text-[10px] font-medium text-slate-800 sm:text-[11px]">
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <p className="truncate text-[10px] font-medium text-slate-800 sm:text-[11px]">
                               <span className="font-mono">
                                 {formatTimeLabel(e.time)}
                               </span>{" "}
-                              <span className="whitespace-normal break-words">
+                              <span className="whitespace-nowrap">
                                 {e.type === "feeding" &&
                                   (e.feedingMethod === "formula"
                                     ? `Mišinėlis ${(e.amountMl ?? 0)} ml`
