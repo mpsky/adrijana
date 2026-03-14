@@ -74,12 +74,13 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!user) return;
+    const uid = user.id;
     async function loadBaby() {
       // Rasti kūdikį, su kuriuo susietas šis vartotojas
       const { data: member } = await supabase
         .from("baby_members")
         .select("baby_id")
-        .eq("user_id", user.id)
+        .eq("user_id", uid)
         .limit(1)
         .maybeSingle();
 
