@@ -66,6 +66,8 @@ export default function Home() {
 
   /** Ar vartotojas turi kūdikį (narystė baby_members). null = dar tikrinama. */
   const [hasBaby, setHasBaby] = useState<boolean | null>(null);
+  /** Dabartinio kūdikio id (iš baby_members) – naudojamas įrašams pririšti prie kūdikio. */
+  const [currentBabyId, setCurrentBabyId] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState<string>("");
   const [codeError, setCodeError] = useState<string>("");
   const [isAcceptingCode, setIsAcceptingCode] = useState(false);
@@ -99,6 +101,7 @@ export default function Home() {
         return;
       }
       setHasBaby(!!member?.baby_id);
+      setCurrentBabyId(member?.baby_id ?? null);
       if (member?.baby_id && typeof window !== "undefined") {
         const { data: babyRow } = await supabase
           .from("babies")
@@ -173,7 +176,7 @@ export default function Home() {
       setIsLoading(false);
     }
 
-    if (user) loadInitialData();
+    if (user && hasBaby) loadInitialData();
 
     const channel = supabase
       .channel("events-realtime")
@@ -270,7 +273,7 @@ export default function Home() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, hasBaby]);
 
   const todayEvents = useMemo(
     () => events.filter((e) => isToday(e.time)),
@@ -535,6 +538,7 @@ export default function Home() {
       if (!activeSleep) {
         const payload = {
           user_id: user?.id,
+          baby_id: currentBabyId ?? undefined,
           type: "sleep",
           time: nowIso,
           notes: null,
@@ -602,6 +606,7 @@ export default function Home() {
         if (!active) {
           const startPayload = {
             user_id: user?.id,
+            baby_id: currentBabyId ?? undefined,
             type: "feeding",
             time: nowIso,
             notes: null,
@@ -663,6 +668,7 @@ export default function Home() {
       } else {
         const payload = {
           user_id: user?.id,
+          baby_id: currentBabyId ?? undefined,
           type: "feeding",
           time: nowIso,
           notes: null,
@@ -729,6 +735,7 @@ export default function Home() {
     } else {
       const payload = {
         user_id: user?.id,
+        baby_id: currentBabyId ?? undefined,
         type: "diaper",
         time: nowIso,
         notes: null,
@@ -860,6 +867,7 @@ export default function Home() {
         window.localStorage.setItem("baby-diary-unlocked-v1", "true");
       }
       setHasBaby(true);
+      setCurrentBabyId(babyId);
       setCodeInput("");
       setCodeError("");
       setBabyInfo(getBabyInfo());

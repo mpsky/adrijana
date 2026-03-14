@@ -316,6 +316,7 @@ export default function AdminPage() {
             feedingMethod === "formula" || feedingMethod === "pumped";
           const payload = {
             user_id: user?.id,
+            baby_id: babyId ?? undefined,
             type: "feeding",
             time: timeIso,
             feeding_method: feedingMethod,
@@ -349,6 +350,7 @@ export default function AdminPage() {
         } else if (type === "diaper") {
           const payload = {
             user_id: user?.id,
+            baby_id: babyId ?? undefined,
             type: "diaper",
             time: timeIso,
             diaper_kind: diaperKind,
@@ -376,6 +378,7 @@ export default function AdminPage() {
         } else {
           const payload = {
             user_id: user?.id,
+            baby_id: babyId ?? undefined,
             type: "sleep",
             time: timeIso,
             sleep_end: sleepEndInput
