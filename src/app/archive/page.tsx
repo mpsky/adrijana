@@ -140,7 +140,7 @@ export default function ArchivePage() {
             )}
           </div>
 
-          <div className="mt-3 max-h-[70vh] space-y-3 overflow-y-auto pr-1 text-sm">
+          <div className="mt-3 max-h-[70vh] space-y-3 overflow-y-auto pr-1 text-base sm:text-sm">
             {archiveByDay.length === 0 ? (
               <p className="text-slate-500">
                 Įrašų dar nėra – pradėk nuo pirmojo maitinimo, sauskelnių

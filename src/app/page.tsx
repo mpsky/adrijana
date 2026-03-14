@@ -1421,11 +1421,11 @@ export default function Home() {
                   )}
                   {feedingMethod === "breast" && activeBreastFeeding && (
                     <div className="space-y-1 text-center">
-                      <div className="mx-auto inline-flex max-w-full items-center gap-2 rounded-2xl bg-rose-50 px-3.5 py-2.5 text-sm font-semibold text-rose-800 ring-1 ring-rose-200">
+                      <div className="mx-auto inline-flex max-w-full items-center gap-3 rounded-2xl bg-rose-50 px-5 py-3.5 text-lg font-semibold text-rose-800 ring-1 ring-rose-200">
                         <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-200">
                           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-700" />
                         </span>
-                        <span className="font-mono text-base sm:text-lg">
+                        <span className="font-mono text-2xl sm:text-3xl">
                           {(() => {
                             const diffMs =
                               now.getTime() -
@@ -1440,7 +1440,7 @@ export default function Home() {
                               .toString()
                               .padStart(2, "0")}:${seconds
                               .toString()
-                              .padStart(2, "0")} min`;
+                              .padStart(2, "0")}`;
                           })()}
                         </span>
                       </div>
@@ -1581,11 +1581,11 @@ export default function Home() {
                 </p>
                 {activeSleep && (
                   <div className="text-center">
-                    <div className="mx-auto inline-flex max-w-full items-center gap-2 rounded-2xl bg-purple-50 px-3.5 py-2.5 text-sm font-semibold text-purple-800 ring-1 ring-purple-200">
+                    <div className="mx-auto inline-flex max-w-full items-center gap-3 rounded-2xl bg-purple-50 px-5 py-3.5 text-lg font-semibold text-purple-800 ring-1 ring-purple-200">
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-200">
                         <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-purple-700" />
                       </span>
-                      <span className="font-mono text-base sm:text-lg">
+                      <span className="font-mono text-2xl sm:text-3xl">
                         {(() => {
                           const diffMs =
                             now.getTime() -
@@ -1600,7 +1600,7 @@ export default function Home() {
                             .toString()
                             .padStart(2, "0")}:${seconds
                             .toString()
-                            .padStart(2, "0")} min`;
+                            .padStart(2, "0")}`;
                         })()}
                       </span>
                     </div>

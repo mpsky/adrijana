@@ -327,7 +327,7 @@ export default function KlausimaiPage() {
                       onBlur={(e) => saveAnswer(q.id, e.target.value)}
                       placeholder="Įrašyk atsakymą po vizito..."
                       rows={3}
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
                     />
                   </div>
                 </div>

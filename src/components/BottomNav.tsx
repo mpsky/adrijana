@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 export function BottomNav() {
   const pathname = usePathname();
 
-  const iconClass = "h-7 w-7 shrink-0";
+  const iconClass = "h-5 w-5 shrink-0";
   const navItems = [
     {
       href: "/",
