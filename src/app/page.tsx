@@ -813,7 +813,7 @@ export default function Home() {
       return;
     }
     setIsAcceptingCode(true);
-    setCodeError(null);
+    setCodeError("");
     try {
       const { data: inviteRow, error: inviteError } = await supabase
         .from("baby_invites")
@@ -861,7 +861,7 @@ export default function Home() {
       }
       setHasBaby(true);
       setCodeInput("");
-      setCodeError(null);
+      setCodeError("");
       setBabyInfo(getBabyInfo());
     } catch (err: any) {
       setCodeError(err.message ?? "Nepavyko priimti pakvietimo.");

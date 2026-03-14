@@ -26,6 +26,7 @@ export default function ProfilisPage() {
 
   useEffect(() => {
     if (!user) return;
+    const uid = user.id;
     async function loadBaby() {
       setIsBabyLoading(true);
       setBabyError(null);
@@ -33,7 +34,7 @@ export default function ProfilisPage() {
       const { data: member, error: memberError } = await supabase
         .from("baby_members")
         .select("baby_id")
-        .eq("user_id", user.id)
+        .eq("user_id", uid)
         .limit(1)
         .maybeSingle();
 
