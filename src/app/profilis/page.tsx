@@ -210,7 +210,7 @@ export default function ProfilisPage() {
             gender: genderValue,
             created_by: user.id,
           })
-          .select(\"*\")
+          .select("*")
           .single();
 
         if (error) throw error;
@@ -221,7 +221,7 @@ export default function ProfilisPage() {
         await supabase.from("baby_members").insert({
           baby_id: newBabyId,
           user_id: user.id,
-          role: \"parent\",
+          role: "parent",
         });
 
         if (data.birth_iso) {
@@ -249,13 +249,13 @@ export default function ProfilisPage() {
     try {
       const code = Math.random().toString(36).slice(2, 10).toUpperCase();
       const { data, error } = await supabase
-        .from(\"baby_invites\")
+        .from("baby_invites")
         .insert({
           baby_id: babyId,
           code,
           created_by: user.id,
         })
-        .select(\"code\")
+        .select("code")
         .single();
 
       if (error) throw error;
@@ -263,7 +263,7 @@ export default function ProfilisPage() {
       setInviteCode((data.code as string) ?? code);
       loadInviteHistory();
     } catch (err: any) {
-      setBabyError(err.message ?? \"Nepavyko sugeneruoti pakvietimo.\");
+      setBabyError(err.message ?? "Nepavyko sugeneruoti pakvietimo.");
     } finally {
       setIsGeneratingInvite(false);
     }
@@ -272,10 +272,10 @@ export default function ProfilisPage() {
   async function loadInviteHistory() {
     if (!babyId) return;
     const { data } = await supabase
-      .from(\"baby_invites\")
-      .select(\"id, code, created_at, used_by\")
-      .eq(\"baby_id\", babyId)
-      .order(\"created_at\", { ascending: false })
+      .from("baby_invites")
+      .select("id, code, created_at, used_by")
+      .eq("baby_id", babyId)
+      .order("created_at", { ascending: false })
       .limit(1);
     setInviteHistory((data as { id: string; code: string; created_at: string; used_by: string | null }[]) ?? []);
   }
@@ -294,60 +294,60 @@ export default function ProfilisPage() {
     setAcceptSuccess(false);
     try {
       const { data, error } = await supabase
-        .from(\"baby_invites\")
-        .select(\"id, code, baby_id, used_by, used_at, babies(name, birth_iso)\")
-        .eq(\"code\", code)
+        .from("baby_invites")
+        .select("id, code, baby_id, used_by, used_at, babies(name, birth_iso)")
+        .eq("code", code)
         .maybeSingle();
 
       if (error) throw new Error(error.message);
       if (!data) {
-        setAcceptInviteError(\"Pakvietimas nerastas.\");
+        setAcceptInviteError("Pakvietimas nerastas.");
         return;
       }
 
       const inv = data as any;
       if (inv.used_by) {
-        setAcceptInviteError(\"Šis pakvietimo kodas jau panaudotas.\");
+        setAcceptInviteError("Šis pakvietimo kodas jau panaudotas.");
         return;
       }
 
       const { data: existing } = await supabase
-        .from(\"baby_members\")
-        .select(\"baby_id\")
-        .eq(\"baby_id\", inv.baby_id)
-        .eq(\"user_id\", user.id)
+        .from("baby_members")
+        .select("baby_id")
+        .eq("baby_id", inv.baby_id)
+        .eq("user_id", user.id)
         .maybeSingle();
 
       if (!existing) {
-        await supabase.from(\"baby_members\").insert({
+        await supabase.from("baby_members").insert({
           baby_id: inv.baby_id,
           user_id: user.id,
-          role: \"parent\",
+          role: "parent",
         });
       }
 
       await supabase
-        .from(\"baby_invites\")
+        .from("baby_invites")
         .update({
           used_by: user.id,
           used_at: new Date().toISOString(),
         })
-        .eq(\"id\", inv.id);
+        .eq("id", inv.id);
 
       const baby = inv.babies;
       if (baby?.birth_iso) {
         setBabyInfo({
-          name: baby.name ?? \"Kūdikis\",
+          name: baby.name ?? "Kūdikis",
           birthIso: baby.birth_iso,
         });
       }
 
-      setAcceptCodeInput(\"\");
+      setAcceptCodeInput("");
       setAcceptSuccess(true);
       setRefreshBabyKey((k) => k + 1);
       loadInviteHistory();
     } catch (err: any) {
-      setAcceptInviteError(err.message ?? \"Nepavyko priimti pakvietimo.\");
+      setAcceptInviteError(err.message ?? "Nepavyko priimti pakvietimo.");
     } finally {
       setIsAcceptingInvite(false);
     }
@@ -358,9 +358,9 @@ export default function ProfilisPage() {
     async function loadEvents() {
       setEventsLoading(true);
       const { data, error } = await supabase
-        .from(\"events\")
-        .select(\"*\")
-        .order(\"time\", { ascending: false });
+        .from("events")
+        .select("*")
+        .order("time", { ascending: false });
       if (error) {
         setEventsError(error.message);
         setEventsLoading(false);
