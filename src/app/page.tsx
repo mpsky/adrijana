@@ -59,14 +59,48 @@ function formatTimeLabel(iso: string) {
   });
 }
 
-function isToday(iso: string) {
+// Pagal LT/Europe/Vilnius laiko juostą
+function dateKeyFromIso(iso: string) {
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  // formatas YYYY-MM-DD pagal LT lokalę ir Vilniaus laiką
+  return d
+    .toLocaleDateString("lt-LT", {
+      timeZone: "Europe/Vilnius",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+    .replace(/\./g, "-");
+}
+
+function todayKeyLt() {
   const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+  return now
+    .toLocaleDateString("lt-LT", {
+      timeZone: "Europe/Vilnius",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+    .replace(/\./g, "-");
+}
+
+function isToday(iso: string) {
+  const key = dateKeyFromIso(iso);
+  if (!key) return false;
+  return key === todayKeyLt();
+}
+
+function isSameDayKey(iso: string, key: string) {
+  if (!key) return false;
+  return dateKeyFromIso(iso) === key;
+}
+
+function formatDelta(current: number, prev: number) {
+  const diff = current - prev;
+  if (!Number.isFinite(diff) || diff === 0) return "0";
+  return diff > 0 ? `+${diff}` : `${diff}`;
 }
 
 function formatAgo(fromIso: string, now: Date) {
@@ -114,6 +148,9 @@ export default function Home() {
 
   const [babyInfo, setBabyInfo] = useState(() => getBabyInfo());
   const [babyGender, setBabyGender] = useState<"female" | "male" | "">("");
+  const [selectedDateKey, setSelectedDateKey] = useState<string>(() => {
+    return todayKeyLt();
+  });
 
   // Patikrinti, ar vartotojas turi kūdikį (narystė baby_members)
   useEffect(() => {
@@ -358,6 +395,7 @@ export default function Home() {
       todayFormulaAmount: 0,
       todayBreastMinutes: 0,
       todayPumpedAmount: 0,
+      todayExpressedAndUsed: 0,
       todayDiapers: 0,
       todayWetDiapers: 0,
       todayDirtyDiapers: 0,
@@ -368,6 +406,7 @@ export default function Home() {
       totalFormulaAmount: 0,
       totalBreastMinutes: 0,
       totalPumpedAmount: 0,
+      totalExpressedAndUsed: 0,
       totalDiapers: 0,
       totalSleepMinutes: 0,
     };
@@ -385,7 +424,8 @@ export default function Home() {
             base.totalFormulaAmount += e.amountMl;
             base.totalFeedingsAmount += e.amountMl;
           } else if (e.feedingMethod === "pumped") {
-            base.totalPumpedAmount += e.amountMl;
+            // mamos pienas suvartotas iš buteliuko
+            base.totalExpressedAndUsed += e.amountMl;
           }
         }
         if (
@@ -395,7 +435,7 @@ export default function Home() {
           base.totalBreastMinutes += e.durationMinutes;
         }
 
-        if (isToday(e.time)) {
+        if (isSameDayKey(e.time, selectedDateKey)) {
           if (isRealFeeding) {
             base.todayFeedings += 1;
           }
@@ -405,7 +445,8 @@ export default function Home() {
               base.todayFormulaAmount += e.amountMl;
               base.todayFeedingsAmount += e.amountMl;
             } else if (e.feedingMethod === "pumped") {
-              base.todayPumpedAmount += e.amountMl;
+              // mamos pienas suvartotas iš buteliuko šiandien
+              base.todayExpressedAndUsed += e.amountMl;
             }
           }
           if (
@@ -417,7 +458,7 @@ export default function Home() {
         }
       } else if (e.type === "diaper") {
         base.totalDiapers += 1;
-        if (isToday(e.time)) {
+        if (isSameDayKey(e.time, selectedDateKey)) {
           base.todayDiapers += 1;
           if (e.diaperKind === "wet") {
             base.todayWetDiapers += 1;
@@ -432,21 +473,28 @@ export default function Home() {
         const end = new Date(e.sleepEnd).getTime();
         const minutes = Math.max(0, Math.round((end - start) / 60000));
         base.totalSleepMinutes += minutes;
-        if (isToday(e.time)) {
+        // Į dienos statistiką traukiame tik tuos miego įrašus,
+        // kurių PRADŽIA ir PABAIGA yra toje pačioje pasirinktą dieną.
+        if (
+          isSameDayKey(e.time, selectedDateKey) &&
+          isSameDayKey(e.sleepEnd, selectedDateKey)
+        ) {
           base.todaySleepMinutes += minutes;
         }
       } else if (e.type === "pumping") {
         if (typeof e.amountMl === "number") {
           base.totalPumpedAmount += e.amountMl;
-          if (isToday(e.time)) {
+          base.totalExpressedAndUsed += e.amountMl;
+          if (isSameDayKey(e.time, selectedDateKey)) {
             base.todayPumpedAmount += e.amountMl;
+            base.todayExpressedAndUsed += e.amountMl;
           }
         }
       }
     }
 
     return base;
-  }, [events]);
+  }, [events, selectedDateKey]);
 
   const todaySleepHoursLabel = useMemo(() => {
     const minutes = stats.todaySleepMinutes;
@@ -502,6 +550,21 @@ export default function Home() {
     [events]
   );
 
+  const lastPumpingEvent = useMemo(
+    () =>
+      [...events]
+        .filter(
+          (e) =>
+            e.type === "pumping" ||
+            (e.type === "feeding" && e.feedingMethod === "pumped")
+        )
+        .sort(
+          (a, b) =>
+            new Date(b.time).getTime() - new Date(a.time).getTime()
+        )[0] as (PumpingEvent | FeedingEvent) | undefined,
+    [events]
+  );
+
   const lastFeedingLabel = useMemo(() => {
     if (!lastFeedingEvent) return "Dar nėra maitinimų.";
     const ago = formatAgo(lastFeedingEvent.time, now);
@@ -525,13 +588,9 @@ export default function Home() {
   }, [lastDiaperEvent, now]);
 
   const lastSleepLabel = useMemo(() => {
-    if (!lastFinishedSleep) return "Dar nėra užfiksuoto miego.";
+    if (!lastFinishedSleep) return "";
     const endIso = lastFinishedSleep.sleepEnd as string;
-    const ago = formatAgo(endIso, now);
-    const startMs = new Date(lastFinishedSleep.time).getTime();
-    const endMs = new Date(endIso).getTime();
-    const minutes = Math.max(0, Math.round((endMs - startMs) / 60000));
-    return `${ago} • ${minutes} min.`;
+    return formatAgo(endIso, now);
   }, [lastFinishedSleep, now]);
 
   const threeHourLimitInfo = useMemo(() => {
@@ -639,7 +698,6 @@ export default function Home() {
     const days = remainingDaysAfterYears - months * 30;
     const hours = totalHours - totalDays * 24;
     const minutes = totalMinutes - totalHours * 60;
-    const seconds = totalSeconds - totalMinutes * 60;
 
     const parts: string[] = [];
     if (years > 0) parts.push(`${years} m.`);
@@ -647,7 +705,6 @@ export default function Home() {
     if (days > 0 || parts.length === 0) parts.push(`${days} d.`);
     if (hours > 0) parts.push(`${hours} val.`);
     if (minutes > 0) parts.push(`${minutes} min.`);
-    parts.push(`${seconds} s.`);
     return parts.join(" ");
   }, [now, babyInfo.birthIso]);
 
@@ -664,6 +721,17 @@ export default function Home() {
     });
   }, [babyInfo.birthIso]);
 
+  const selectedDateLabel = useMemo(() => {
+    if (!selectedDateKey) return "";
+    const d = new Date(selectedDateKey + "T00:00:00");
+    if (Number.isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("lt-LT", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+  }, [selectedDateKey]);
+
   const archiveByDay = useMemo(() => {
     const groups: Record<string, BabyEvent[]> = {};
     for (const e of events) {
@@ -677,6 +745,66 @@ export default function Home() {
     );
     return entries;
   }, [events]);
+
+  const availableDateKeys = useMemo(
+    () => archiveByDay.map(([key]) => key),
+    [archiveByDay]
+  );
+
+  const prevStats = useMemo(() => {
+    // surandame „vakar“ pagal turimų įrašų sąrašą, o ne kalendoriaus datą.
+    // availableDateKeys yra surūšiuotas DESC (naujausia diena pirmoje vietoje),
+    // todėl „vakar“ yra elementas su indeksu idx + 1.
+    const idx = availableDateKeys.findIndex((k) => k === selectedDateKey);
+    // jei pasirinkta diena nerasta arba ji yra paskutinė sąraše – neturime su kuo lyginti
+    if (idx === -1 || idx + 1 >= availableDateKeys.length) {
+      return {
+        todayFormulaAmount: 0,
+        todayExpressedAndUsed: 0,
+        todayDiapers: 0,
+        todaySleepMinutes: 0,
+        todayPumpedAmount: 0,
+      };
+    }
+    const key = availableDateKeys[idx + 1];
+    const base = {
+      todayFormulaAmount: 0,
+      todayExpressedAndUsed: 0,
+      todayDiapers: 0,
+      todaySleepMinutes: 0,
+      todayPumpedAmount: 0,
+    };
+    for (const e of events) {
+      if (!isSameDayKey(e.time, key)) continue;
+      if (e.type === "feeding") {
+        if (typeof e.amountMl === "number") {
+          if (e.feedingMethod === "formula") {
+            base.todayFormulaAmount += e.amountMl;
+          } else if (e.feedingMethod === "pumped") {
+            base.todayExpressedAndUsed += e.amountMl;
+          }
+        }
+      } else if (e.type === "diaper") {
+        base.todayDiapers += 1;
+      } else if (e.type === "sleep" && e.sleepEnd) {
+        const start = new Date(e.time).getTime();
+        const end = new Date(e.sleepEnd).getTime();
+        if (
+          isSameDayKey(e.time, key) &&
+          isSameDayKey(e.sleepEnd, key)
+        ) {
+          const minutes = Math.max(0, Math.round((end - start) / 60000));
+          base.todaySleepMinutes += minutes;
+        }
+      } else if (e.type === "pumping") {
+        if (typeof e.amountMl === "number") {
+          base.todayExpressedAndUsed += e.amountMl;
+          base.todayPumpedAmount += e.amountMl;
+        }
+      }
+    }
+    return base;
+  }, [events, availableDateKeys, selectedDateKey]);
 
   const activeSleep = useMemo(
     () =>
@@ -997,7 +1125,16 @@ export default function Home() {
         .select("*")
         .single();
 
-      if (!error && data) {
+      if (error) {
+        if (typeof window !== "undefined") {
+          console.error("Nutraukimo įrašo klaida:", error);
+          window.alert(
+            `Nepavyko išsaugoti nutraukimo: ${
+              (error as any).message ?? "nežinoma klaida"
+            }`
+          );
+        }
+      } else if (data) {
         const newEvent: PumpingEvent = {
           id: data.id,
           type: "pumping",
@@ -1168,12 +1305,24 @@ export default function Home() {
       )}
       {showDiary && (
         <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 pb-24 pt-6 sm:px-6 sm:py-10">
+        {/* Kūdikio info viršuje */}
+        <section>
+          <div className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-sky-50 via-rose-50 to-indigo-50 px-4 py-3 text-xs text-slate-800 shadow-sm ring-1 ring-slate-100 sm:px-5">
+            <p className="truncate text-[13px] font-semibold text-slate-900">
+              {babyInfo.name || "Kūdikis"}
+              <span className="ml-2 text-[11px] font-normal text-slate-600">
+                {babyAgeLabel ? `• ${babyAgeLabel}` : ""}
+              </span>
+            </p>
+          </div>
+        </section>
+
         {/* Šiandien – santrauka + paskutiniai įrašai */}
         <section className="space-y-3">
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-sky-100 via-rose-100 to-indigo-100 p-[1px] shadow-sm">
             <div className="relative rounded-[1.35rem] bg-white px-4 py-4 text-xs text-slate-800 sm:px-5 sm:py-5">
               {/* Header */}
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-2 sm:gap-3">
                 <div className="flex items-center gap-2">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200">
                     <svg
@@ -1188,32 +1337,56 @@ export default function Home() {
                       <path d="M8 9h8" />
                     </svg>
                   </div>
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                      Šiandien
-                    </p>
-                  </div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Dienos statistika
+                  </p>
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11px] font-medium text-sky-700 ring-1 ring-sky-200">
-                  <svg
-                    viewBox="0 0 24 24"
-                    className="h-7 w-7"
-                    aria-hidden="true"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedDateKey}
+                    onChange={(e) => setSelectedDateKey(e.target.value)}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                   >
-                    <circle cx="12" cy="12" r="8" />
-                    <path d="M12 8v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <span>
-                    Dabar{" "}
-                    {now.toLocaleTimeString("lt-LT", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {availableDateKeys.length === 0 && (
+                      <option value={selectedDateKey}>
+                        {selectedDateLabel || "Pasirink dieną"}
+                      </option>
+                    )}
+                    {availableDateKeys.map((key) => (
+                      <option key={key} value={key}>
+                        {new Date(key + "T00:00:00").toLocaleDateString("lt-LT", {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="hidden items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11px] font-medium text-sky-700 ring-1 ring-sky-200 sm:inline-flex">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-7 w-7"
+                      aria-hidden="true"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                    >
+                      <circle cx="12" cy="12" r="8" />
+                      <path
+                        d="M12 8v4l2.5 1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span>
+                      Dabar{" "}
+                      {now.toLocaleTimeString("lt-LT", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
                   </span>
-                </span>
+                </div>
               </div>
 
               {/* Today summary */}
@@ -1222,24 +1395,96 @@ export default function Home() {
                   <dt className="text-[11px] font-medium text-slate-700">
                     Mišinėlis
                   </dt>
-                  <dd className="text-right text-[11px] font-semibold text-sky-700">
-                    {stats.todayFormulaAmount} ml
+                  <dd className="flex items-center justify-end gap-1 text-right text-[11px] font-semibold text-sky-700">
+                    <span>{stats.todayFormulaAmount} ml</span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        stats.todayFormulaAmount -
+                          prevStats.todayFormulaAmount >
+                        0
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : stats.todayFormulaAmount -
+                              prevStats.todayFormulaAmount <
+                            0
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      {formatDelta(
+                        stats.todayFormulaAmount,
+                        prevStats.todayFormulaAmount
+                      )}
+                    </span>
                   </dd>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl bg-rose-50 px-3 py-2 ring-1 ring-rose-100">
                   <dt className="text-[11px] font-medium text-slate-700">
-                    Nutrauktas
+                    Suvartotas nutrauktas pienas
                   </dt>
-                  <dd className="text-right text-[11px] font-semibold text-rose-700">
-                    {stats.todayPumpedAmount} ml
+                  <dd className="flex items-center justify-end gap-1 text-right text-[11px] font-semibold text-rose-700">
+                    <span>{stats.todayExpressedAndUsed} ml</span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        stats.todayExpressedAndUsed -
+                          prevStats.todayExpressedAndUsed >
+                        0
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : stats.todayExpressedAndUsed -
+                              prevStats.todayExpressedAndUsed <
+                            0
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      {formatDelta(
+                        stats.todayExpressedAndUsed,
+                        prevStats.todayExpressedAndUsed
+                      )}
+                    </span>
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl bg-rose-50/70 px-3 py-2 ring-1 ring-rose-100/80">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Nutrauktas pienas
+                  </dt>
+                  <dd className="flex items-center justify-end gap-1 text-right text-[11px] font-semibold text-rose-700">
+                    <span>{stats.todayPumpedAmount} ml</span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        stats.todayPumpedAmount - prevStats.todayPumpedAmount > 0
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : stats.todayPumpedAmount - prevStats.todayPumpedAmount < 0
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      {formatDelta(
+                        stats.todayPumpedAmount,
+                        prevStats.todayPumpedAmount
+                      )}
+                    </span>
                   </dd>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
                   <dt className="text-[11px] font-medium text-slate-700">
                     Sauskelnės
                   </dt>
-                  <dd className="text-right text-[11px] font-semibold text-emerald-700">
-                    {stats.todayDiapers} kartai
+                  <dd className="flex items-center justify-end gap-1 text-right text-[11px] font-semibold text-emerald-700">
+                    <span>{stats.todayDiapers} kartai</span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        stats.todayDiapers - prevStats.todayDiapers > 0
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : stats.todayDiapers - prevStats.todayDiapers < 0
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      {formatDelta(
+                        stats.todayDiapers,
+                        prevStats.todayDiapers
+                      )}
+                    </span>
                   </dd>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl bg-emerald-50/60 px-3 py-1.5 text-[11px] ring-1 ring-emerald-100/70">
@@ -1274,96 +1519,27 @@ export default function Home() {
                   <dt className="text-[11px] font-medium text-slate-700">
                     Miegas
                   </dt>
-                  <dd className="text-right text-[11px] font-semibold text-purple-700">
-                    {todaySleepHoursLabel}
-                  </dd>
-                </div>
-              </dl>
-
-              {/* Divider */}
-              <div className="my-3 h-px bg-slate-100" />
-
-              <dl className="space-y-1.5">
-                <div className="flex items-center justify-between gap-3 rounded-2xl bg-sky-50 px-3 py-2 ring-1 ring-sky-100">
-                  <dt className="text-[11px] font-medium text-slate-700">
-                    Maitinimas
-                  </dt>
-                  <dd className="text-right text-[11px] text-slate-600">
-                  {lastFeedingEvent ? (
-                    <>
-                      <span className="font-semibold text-slate-900">
-                        {formatAgo(lastFeedingEvent.time, now)}
-                      </span>
-                      <span className="mx-1 text-slate-500">•</span>
-                      <span>
-                        {lastFeedingEvent.feedingMethod === "breast"
-                          ? "krūtimi"
-                          : lastFeedingEvent.feedingMethod === "formula"
-                          ? "mišinėlis"
-                          : "nutrauktas"}
-                      </span>
-                      {typeof lastFeedingEvent.amountMl === "number" &&
-                        lastFeedingEvent.feedingMethod !== "breast" && (
-                          <>
-                            <span className="mx-1 text-slate-500">•</span>
-                            <span className="font-semibold text-sky-700">
-                              {lastFeedingEvent.amountMl} ml
-                            </span>
-                          </>
-                        )}
-                      {stats.todayPumpedAmount > 0 && (
-                        <>
-                          <span className="mx-1 text-slate-500">•</span>
-                          <span className="text-slate-600">
-                            Nutraukta šiandien{" "}
-                            <span className="font-semibold text-rose-700">
-                              {stats.todayPumpedAmount} ml
-                            </span>
-                          </span>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-slate-400">Dar nėra maitinimų.</span>
-                  )}
-                  </dd>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
-                  <dt className="text-[11px] font-medium text-slate-700">
-                    Miegas
-                  </dt>
-                  <dd className="text-right text-[11px] text-slate-600">
-                  {lastFinishedSleep ? (
-                    <span className="font-semibold text-emerald-800">
-                      {lastSleepLabel}
+                  <dd className="flex items-center justify-end gap-1 text-right text-[11px] font-semibold text-purple-700">
+                    <span>{todaySleepHoursLabel}</span>
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                        stats.todaySleepMinutes -
+                          prevStats.todaySleepMinutes >
+                        0
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : stats.todaySleepMinutes -
+                              prevStats.todaySleepMinutes <
+                            0
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : "border-slate-200 bg-slate-50 text-slate-600"
+                      }`}
+                    >
+                      {formatDelta(
+                        stats.todaySleepMinutes,
+                        prevStats.todaySleepMinutes
+                      )}{" "}
+                      min
                     </span>
-                  ) : (
-                    <span className="text-slate-400">Dar nėra miego įrašų.</span>
-                  )}
-                  </dd>
-                </div>
-
-                <div className="flex items-center justify-between gap-3 rounded-2xl bg-amber-50 px-3 py-2 ring-1 ring-amber-100">
-                  <dt className="text-[11px] font-medium text-slate-700">
-                    Sauskelnės
-                  </dt>
-                  <dd className="text-right text-[11px] text-slate-600">
-                  {lastDiaperEvent ? (
-                    <>
-                      <span>
-                        {lastDiaperEvent.diaperKind === "wet"
-                          ? "šlapias"
-                          : lastDiaperEvent.diaperKind === "dirty"
-                          ? "purvinas"
-                          : "šlapias ir purvinas"}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-slate-400">
-                      Dar nėra sauskelnių įrašų.
-                    </span>
-                  )}
                   </dd>
                 </div>
               </dl>
@@ -1371,7 +1547,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-3">
+        <section>
           <div className="w-full rounded-2xl bg-sky-50/80 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -2043,6 +2219,13 @@ export default function Home() {
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                   Šiandienos įrašai
                 </p>
+                <a
+                  href="/archive"
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
+                >
+                  <span>Įrašų archyvas</span>
+                  <span aria-hidden="true">›</span>
+                </a>
               </div>
               <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
                 {todayEvents.length === 0 ? (
@@ -2069,7 +2252,7 @@ export default function Home() {
                               ? "Sauskelnių keitimas"
                               : e.type === "sleep"
                               ? "Miegas"
-                              : "Nutraukimas"}
+                              : "Nutrauktas pienas"}
                           </span>
                           {" | "}
                           <span>
@@ -2083,11 +2266,12 @@ export default function Home() {
                                       ? " (dešinė)"
                                       : ""
                                   }`
-                                : `Mišinėlis${
-                                    e.amountMl &&
-                                    e.feedingMethod === "formula"
-                                      ? ` ${e.amountMl} ml`
-                                      : ""
+                                : e.feedingMethod === "formula"
+                                ? `Mišinėlis${
+                                    e.amountMl ? ` ${e.amountMl} ml` : ""
+                                  }`
+                                : `Nutrauktas${
+                                    e.amountMl ? ` ${e.amountMl} ml` : ""
                                   }`
                               : e.type === "diaper"
                               ? e.diaperKind === "wet"
@@ -2097,8 +2281,8 @@ export default function Home() {
                                 : "Šlapias ir purvinas"
                               : e.type === "pumping"
                               ? e.amountMl
-                                ? `Nutrauktas pienas ${e.amountMl} ml`
-                                : "Nutrauktas pienas"
+                                ? `${e.amountMl} ml`
+                                : ""
                               : e.sleepEnd
                               ? `nuo ${formatTimeLabel(
                                   e.time

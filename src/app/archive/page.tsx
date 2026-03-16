@@ -35,7 +35,15 @@ type SleepEvent = {
   sleepEnd?: string;
 };
 
-type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
+type PumpingEvent = {
+  id: string;
+  type: "pumping";
+  time: string;
+  notes?: string;
+  amountMl?: number;
+};
+
+type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent | PumpingEvent;
 
 function formatTimeLabel(iso: string) {
   const d = new Date(iso);
@@ -88,7 +96,7 @@ export default function ArchivePage() {
       if (!error && data) {
         const mapped: BabyEvent[] = (data as any[]).map((row) => {
           if (row.type === "feeding") {
-            return {
+            const feeding: FeedingEvent = {
               id: row.id,
               type: "feeding",
               time: row.time,
@@ -101,23 +109,36 @@ export default function ArchivePage() {
                   ? row.breast_side
                   : null,
             };
+            return feeding;
           }
           if (row.type === "diaper") {
-            return {
+            const diaper: DiaperEvent = {
               id: row.id,
               type: "diaper",
               time: row.time,
               notes: row.notes ?? undefined,
               diaperKind: row.diaper_kind,
             };
+            return diaper;
           }
-          return {
+          if (row.type === "pumping") {
+            const pumping: PumpingEvent = {
+              id: row.id,
+              type: "pumping",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              amountMl: row.amount_ml ?? undefined,
+            };
+            return pumping;
+          }
+          const sleep: SleepEvent = {
             id: row.id,
             type: "sleep",
             time: row.time,
             notes: row.notes ?? undefined,
             sleepEnd: row.sleep_end ?? undefined,
           };
+          return sleep;
         });
         setEvents(mapped);
       }
@@ -218,6 +239,8 @@ export default function ArchivePage() {
                                   ? "Maitinimas"
                                   : e.type === "diaper"
                                   ? "Sauskelnių keitimas"
+                                  : e.type === "pumping"
+                                  ? "Nutrauktas pienas"
                                   : "Miegas"}
                               </span>
                               {" | "}
@@ -234,16 +257,31 @@ export default function ArchivePage() {
                                           : ""
                                       }`
                                     : e.feedingMethod === "pumped"
-                                    ? `Nutrauktas${e.amountMl ? ` ${e.amountMl} ml` : ""}`
-                                    : `Mišinėlis${e.amountMl && e.feedingMethod === "formula" ? ` ${e.amountMl} ml` : ""}`
+                                    ? `Nutrauktas${
+                                        e.amountMl ? ` ${e.amountMl} ml` : ""
+                                      }`
+                                    : `Mišinėlis${
+                                        e.amountMl &&
+                                        e.feedingMethod === "formula"
+                                          ? ` ${e.amountMl} ml`
+                                          : ""
+                                      }`
                                   : e.type === "diaper"
                                   ? e.diaperKind === "wet"
                                     ? "Šlapias"
                                     : e.diaperKind === "dirty"
                                     ? "Purvinas"
                                     : "Šlapias ir purvinas"
+                                  : e.type === "pumping"
+                                  ? (e as PumpingEvent).amountMl
+                                    ? `Nutrauktas pienas ${
+                                        (e as PumpingEvent).amountMl
+                                      } ml`
+                                    : "Nutrauktas pienas"
                                   : e.sleepEnd
-                                  ? `nuo ${formatTimeLabel(e.time)} iki ${formatTimeLabel(e.sleepEnd)}`
+                                  ? `nuo ${formatTimeLabel(e.time)} iki ${formatTimeLabel(
+                                      e.sleepEnd
+                                    )}`
                                   : `nuo ${formatTimeLabel(e.time)} (vyksta)`}
                               </span>
                               {e.type === "feeding" &&

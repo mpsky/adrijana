@@ -12,7 +12,7 @@ import {
 } from "@/lib/babyStorage";
 import { Button } from "@/components/Button";
 
-type EventType = "feeding" | "diaper" | "sleep";
+type EventType = "feeding" | "diaper" | "sleep" | "pumping";
 type FeedingMethod = "breast" | "formula" | "pumped";
 type DiaperKind = "wet" | "dirty" | "both";
 
@@ -40,7 +40,14 @@ type SleepEvent = {
   sleepEnd?: string;
 };
 
-type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
+type PumpingEvent = {
+  id: string;
+  type: "pumping";
+  time: string;
+  amountMl?: number;
+};
+
+type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent | PumpingEvent;
 
 function formatTimeLabel(iso: string) {
   const d = new Date(iso);
@@ -88,6 +95,7 @@ export default function ProfilisPage() {
   const [amountMl, setAmountMl] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [breastSide, setBreastSide] = useState<"left" | "right">("left");
 
   useEffect(() => {
     if (!isLoading && !user) router.replace("/prisijungti");
@@ -375,7 +383,7 @@ export default function ProfilisPage() {
       }
       const mapped: BabyEvent[] = (data as any[]).map((row) => {
         if (row.type === "feeding") {
-          return {
+          const feeding: FeedingEvent = {
             id: row.id,
             type: "feeding",
             time: row.time,
@@ -387,21 +395,33 @@ export default function ProfilisPage() {
                 ? row.breast_side
                 : null,
           };
+          return feeding;
         }
         if (row.type === "diaper") {
-          return {
+          const diaper: DiaperEvent = {
             id: row.id,
             type: "diaper",
             time: row.time,
             diaperKind: row.diaper_kind,
           };
+          return diaper;
         }
-        return {
+        if (row.type === "pumping") {
+          const pumping: PumpingEvent = {
+            id: row.id,
+            type: "pumping",
+            time: row.time,
+            amountMl: row.amount_ml ?? undefined,
+          };
+          return pumping;
+        }
+        const sleep: SleepEvent = {
           id: row.id,
           type: "sleep",
           time: row.time,
           sleepEnd: row.sleep_end ?? undefined,
         };
+        return sleep;
       });
       setEvents(mapped);
       setEventsError(null);
@@ -432,6 +452,7 @@ export default function ProfilisPage() {
     setSleepEndInput("");
     setEventsError(null);
     setTimeInput("");
+    setBreastSide("left");
   }
 
   function startEditEvent(e: BabyEvent) {
@@ -443,6 +464,7 @@ export default function ProfilisPage() {
       setAmountMl(e.amountMl ? String(e.amountMl) : "");
       setDurationMinutes(e.durationMinutes ? String(e.durationMinutes) : "");
       setSleepEndInput("");
+      setBreastSide(e.breastSide === "right" ? "right" : "left");
     } else if (e.type === "diaper") {
       setDiaperKind(e.diaperKind);
       setAmountMl("");
@@ -485,6 +507,7 @@ export default function ProfilisPage() {
                 : null,
             diaper_kind: null,
             sleep_end: null,
+            breast_side: feedingMethod === "breast" ? breastSide : null,
           };
           const { data, error } = await supabase
             .from("events")
@@ -500,6 +523,10 @@ export default function ProfilisPage() {
               feedingMethod: data.feeding_method,
               amountMl: data.amount_ml ?? undefined,
               durationMinutes: data.duration_minutes ?? undefined,
+              breastSide:
+                data.breast_side === "left" || data.breast_side === "right"
+                  ? data.breast_side
+                  : null,
             },
             ...prev,
           ]);
@@ -530,7 +557,7 @@ export default function ProfilisPage() {
             },
             ...prev,
           ]);
-        } else {
+        } else if (eventType === "sleep") {
           const payload = {
             user_id: user.id,
             baby_id: babyId ?? undefined,
@@ -559,6 +586,33 @@ export default function ProfilisPage() {
             },
             ...prev,
           ]);
+        } else if (eventType === "pumping") {
+          const payload = {
+            user_id: user.id,
+            baby_id: babyId ?? undefined,
+            type: "pumping",
+            time: timeIso,
+            diaper_kind: null,
+            feeding_method: null,
+            amount_ml: amountMl ? Number(amountMl) || null : null,
+            duration_minutes: null,
+            sleep_end: null,
+          };
+          const { data, error } = await supabase
+            .from("events")
+            .insert(payload)
+            .select("*")
+            .single();
+          if (error) throw error;
+          setEvents((prev) => [
+            {
+              id: data.id,
+              type: "pumping",
+              time: data.time,
+              amountMl: data.amount_ml ?? undefined,
+            },
+            ...prev,
+          ]);
         }
       } else {
         if (eventType === "feeding") {
@@ -576,6 +630,7 @@ export default function ProfilisPage() {
                 : null,
             diaper_kind: null,
             sleep_end: null,
+            breast_side: feedingMethod === "breast" ? breastSide : null,
           };
           const { data, error } = await supabase
             .from("events")
@@ -594,6 +649,11 @@ export default function ProfilisPage() {
                     feedingMethod: data.feeding_method,
                     amountMl: data.amount_ml ?? undefined,
                     durationMinutes: data.duration_minutes ?? undefined,
+                    breastSide:
+                      data.breast_side === "left" ||
+                      data.breast_side === "right"
+                        ? data.breast_side
+                        : null,
                   }
                 : e
             )
@@ -627,7 +687,7 @@ export default function ProfilisPage() {
                 : e
             )
           );
-        } else {
+        } else if (eventType === "sleep") {
           const payload = {
             type: "sleep",
             time: timeIso,
@@ -654,6 +714,35 @@ export default function ProfilisPage() {
                     type: "sleep" as const,
                     time: data.time,
                     sleepEnd: data.sleep_end ?? undefined,
+                  }
+                : e
+            )
+          );
+        } else if (eventType === "pumping") {
+          const payload = {
+            type: "pumping",
+            time: timeIso,
+            diaper_kind: null,
+            feeding_method: null,
+            amount_ml: amountMl ? Number(amountMl) || null : null,
+            duration_minutes: null,
+            sleep_end: null,
+          };
+          const { data, error } = await supabase
+            .from("events")
+            .update(payload)
+            .eq("id", editingEventId)
+            .select("*")
+            .single();
+          if (error) throw error;
+          setEvents((prev) =>
+            prev.map((e) =>
+              e.id === data.id
+                ? {
+                    id: data.id,
+                    type: "pumping" as const,
+                    time: data.time,
+                    amountMl: data.amount_ml ?? undefined,
                   }
                 : e
             )
@@ -1039,6 +1128,17 @@ export default function ProfilisPage() {
                     >
                       Miegas
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setEventType("pumping")}
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                        eventType === "pumping"
+                          ? "bg-rose-500 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      Nutraukimas
+                    </button>
                   </div>
                 </div>
               </div>
@@ -1085,6 +1185,37 @@ export default function ProfilisPage() {
                       </button>
                     </div>
                   </div>
+                  {feedingMethod === "breast" && (
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-medium text-slate-600">
+                        Krūtis
+                      </label>
+                      <div className="inline-flex rounded-full bg-slate-50 p-1 ring-1 ring-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setBreastSide("left")}
+                          className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+                            breastSide === "left"
+                              ? "bg-emerald-500 text-white shadow-sm"
+                              : "text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          Kairė
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBreastSide("right")}
+                          className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
+                            breastSide === "right"
+                              ? "bg-emerald-500 text-white shadow-sm"
+                              : "text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          Dešinė
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {feedingMethod === "formula" || feedingMethod === "pumped" ? (
                     <div className="space-y-1.5">
                       <label className="block text-[11px] font-medium text-slate-600">
@@ -1169,6 +1300,22 @@ export default function ProfilisPage() {
                     value={sleepEndInput}
                     onChange={(e) => setSleepEndInput(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                  />
+                </div>
+              )}
+
+              {eventType === "pumping" && (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Kiekis (ml)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={amountMl}
+                    onChange={(e) => setAmountMl(e.target.value)}
+                    placeholder="pvz. 60"
+                    className="w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                   />
                 </div>
               )}
@@ -1278,6 +1425,9 @@ export default function ProfilisPage() {
                                     : `Miegas nuo ${formatTimeLabel(
                                         e.time
                                       )}`)}
+                                {e.type === "pumping" &&
+                                  `Nutrauktas pienas ${(e as PumpingEvent)
+                                    .amountMl ?? 0} ml`}
                               </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
