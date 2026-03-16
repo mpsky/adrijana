@@ -667,9 +667,9 @@ export default function ProfilisPage() {
     if (!confirm("Tikrai ištrinti šį įrašą?")) return;
     const prev = events;
     setEvents((cur) => cur.filter((e) => e.id !== id));
-    const { error } = await supabase.from(\"events\").delete().eq(\"id\", id);
+    const { error } = await supabase.from("events").delete().eq("id", id);
     if (error) {
-      alert(\"Klaida trinant: \" + error.message);
+      alert("Klaida trinant: " + error.message);
       setEvents(prev);
     }
   }
