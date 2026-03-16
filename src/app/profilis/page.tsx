@@ -86,7 +86,7 @@ export default function ProfilisPage() {
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoading && !user) router.replace(\"/prisijungti\");
+    if (!isLoading && !user) router.replace("/prisijungti");
   }, [isLoading, user, router]);
 
   useEffect(() => {
@@ -97,9 +97,9 @@ export default function ProfilisPage() {
       setBabyError(null);
       // Rasti kūdikį, su kuriuo susietas vartotojas
       const { data: member, error: memberError } = await supabase
-        .from(\"baby_members\")
-        .select(\"baby_id\")
-        .eq(\"user_id\", uid)
+        .from("baby_members")
+        .select("baby_id")
+        .eq("user_id", uid)
         .limit(1)
         .maybeSingle();
 
@@ -111,17 +111,17 @@ export default function ProfilisPage() {
 
       if (!member?.baby_id) {
         setBabyId(null);
-        setBabyName(\"\");
-        setBabyBirthInput(\"\");
-        setBabyGender(\"\");
+        setBabyName("");
+        setBabyBirthInput("");
+        setBabyGender("");
         setIsBabyLoading(false);
         return;
       }
 
       const { data: babyRow, error: babyRowError } = await supabase
-        .from(\"babies\")
-        .select(\"*\")
-        .eq(\"id\", member.baby_id)
+        .from("babies")
+        .select("*")
+        .eq("id", member.baby_id)
         .maybeSingle();
 
       if (babyRowError) {
@@ -132,22 +132,22 @@ export default function ProfilisPage() {
 
       if (!babyRow) {
         setBabyId(null);
-        setBabyName(\"\");
-        setBabyBirthInput(\"\");
-        setBabyGender(\"\");
+        setBabyName("");
+        setBabyBirthInput("");
+        setBabyGender("");
         setIsBabyLoading(false);
         return;
       }
 
       const id = babyRow.id as string;
-      const name = (babyRow.name as string) ?? \"\";
+      const name = (babyRow.name as string) ?? "";
       const birthIso = (babyRow.birth_iso as string) ?? null;
-      const gender = (babyRow as { gender?: string }).gender ?? \"\";
+      const gender = (babyRow as { gender?: string }).gender ?? "";
 
       setBabyId(id);
       setBabyName(name);
       setBabyBirthInput(
-        birthIso ? new Date(birthIso).toISOString().slice(0, 16) : \"\"
+        birthIso ? new Date(birthIso).toISOString().slice(0, 16) : ""
       );
       setBabyGender(gender);
       setIsBabyLoading(false);
