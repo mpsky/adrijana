@@ -1,11 +1,11 @@
-"use client";
+\"use client\";
 
-import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
-import { supabase } from "@/lib/supabaseClient";
-import { useAuth } from "@/lib/authContext";
-import { getBabyInfo, setBabyInfo } from "@/lib/babyStorage";
-import { Button } from "@/components/Button";
+import { useEffect, useMemo, useState } from \"react\";
+import Image from \"next/image\";
+import { supabase } from \"@/lib/supabaseClient\";
+import { useAuth } from \"@/lib/authContext\";
+import { getBabyInfo, setBabyInfo } from \"@/lib/babyStorage\";
+import { Button } from \"@/components/Button\";
 
 type EventType = "feeding" | "diaper" | "sleep" | "pumping";
 
@@ -1159,7 +1159,7 @@ export default function Home() {
         </div>
       )}
       {showDiary && (
-      <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
+        <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 pb-24 pt-6 sm:px-6 sm:py-10">
         {/* Šiandien – santrauka + paskutiniai įrašai */}
         <section className="space-y-3">
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-sky-100 via-rose-100 to-indigo-100 p-[1px] shadow-sm">
@@ -2117,7 +2117,7 @@ export default function Home() {
         </section>
 
         {/* Archyvas perkeltas į atskirą /archive puslapį */}
-      </main>
+        </main>
       )}
     </div>
   );
