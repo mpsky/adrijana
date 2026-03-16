@@ -367,31 +367,31 @@ export default function ProfilisPage() {
         return;
       }
       const mapped: BabyEvent[] = (data as any[]).map((row) => {
-        if (row.type === \"feeding\") {
+        if (row.type === "feeding") {
           return {
             id: row.id,
-            type: \"feeding\",
+            type: "feeding",
             time: row.time,
             feedingMethod: row.feeding_method,
             amountMl: row.amount_ml ?? undefined,
             durationMinutes: row.duration_minutes ?? undefined,
             breastSide:
-              row.breast_side === \"left\" || row.breast_side === \"right\"
+              row.breast_side === "left" || row.breast_side === "right"
                 ? row.breast_side
                 : null,
           };
         }
-        if (row.type === \"diaper\") {
+        if (row.type === "diaper") {
           return {
             id: row.id,
-            type: \"diaper\",
+            type: "diaper",
             time: row.time,
             diaperKind: row.diaper_kind,
           };
         }
         return {
           id: row.id,
-          type: \"sleep\",
+          type: "sleep",
           time: row.time,
           sleepEnd: row.sleep_end ?? undefined,
         };
@@ -417,34 +417,36 @@ export default function ProfilisPage() {
 
   function resetEventForm() {
     setEditingEventId(null);
-    setEventType(\"feeding\");
-    setFeedingMethod(\"formula\");
-    setDiaperKind(\"wet\");
-    setAmountMl(\"\");
-    setDurationMinutes(\"\");
-    setSleepEndInput(\"\");
+    setEventType("feeding");
+    setFeedingMethod("formula");
+    setDiaperKind("wet");
+    setAmountMl("");
+    setDurationMinutes("");
+    setSleepEndInput("");
     setEventsError(null);
-    setTimeInput(\"\");
+    setTimeInput("");
   }
 
   function startEditEvent(e: BabyEvent) {
     setEditingEventId(e.id);
     setEventType(e.type);
     setTimeInput(toLocalDateTimeInputValue(e.time));
-    if (e.type === \"feeding\") {
+    if (e.type === "feeding") {
       setFeedingMethod(e.feedingMethod);
-      setAmountMl(e.amountMl ? String(e.amountMl) : \"\");
-      setDurationMinutes(e.durationMinutes ? String(e.durationMinutes) : \"\");
-      setSleepEndInput(\"\");
-    } else if (e.type === \"diaper\") {
+      setAmountMl(e.amountMl ? String(e.amountMl) : "");
+      setDurationMinutes(e.durationMinutes ? String(e.durationMinutes) : "");
+      setSleepEndInput("");
+    } else if (e.type === "diaper") {
       setDiaperKind(e.diaperKind);
-      setAmountMl(\"\");
-      setDurationMinutes(\"\");
-      setSleepEndInput(\"\");
+      setAmountMl("");
+      setDurationMinutes("");
+      setSleepEndInput("");
     } else {
-      setAmountMl(\"\");
-      setDurationMinutes(\"\");
-      setSleepEndInput(e.sleepEnd ? toLocalDateTimeInputValue(e.sleepEnd) : \"\");
+      setAmountMl("");
+      setDurationMinutes("");
+      setSleepEndInput(
+        e.sleepEnd ? toLocalDateTimeInputValue(e.sleepEnd) : ""
+      );
     }
   }
 
@@ -454,20 +456,20 @@ export default function ProfilisPage() {
       setEventsSaving(true);
       setEventsError(null);
       if (!timeInput) {
-        setEventsError(\"Pasirink laiką.\");
+        setEventsError("Pasirink laiką.");
         setEventsSaving(false);
         return;
       }
       const timeIso = fromLocalDateTimeInputValue(timeInput);
 
       if (!editingEventId) {
-        if (eventType === \"feeding\") {
+        if (eventType === "feeding") {
           const isAmountBased =
-            feedingMethod === \"formula\" || feedingMethod === \"pumped\";
+            feedingMethod === "formula" || feedingMethod === "pumped";
           const payload = {
             user_id: user.id,
             baby_id: babyId ?? undefined,
-            type: \"feeding\",
+            type: "feeding",
             time: timeIso,
             feeding_method: feedingMethod,
             amount_ml:
@@ -480,15 +482,15 @@ export default function ProfilisPage() {
             sleep_end: null,
           };
           const { data, error } = await supabase
-            .from(\"events\")
+            .from("events")
             .insert(payload)
-            .select(\"*\")
+            .select("*")
             .single();
           if (error) throw error;
           setEvents((prev) => [
             {
               id: data.id,
-              type: \"feeding\",
+              type: "feeding",
               time: data.time,
               feedingMethod: data.feeding_method,
               amountMl: data.amount_ml ?? undefined,
@@ -496,11 +498,11 @@ export default function ProfilisPage() {
             },
             ...prev,
           ]);
-        } else if (eventType === \"diaper\") {
+        } else if (eventType === "diaper") {
           const payload = {
             user_id: user.id,
             baby_id: babyId ?? undefined,
-            type: \"diaper\",
+            type: "diaper",
             time: timeIso,
             diaper_kind: diaperKind,
             feeding_method: null,
@@ -509,15 +511,15 @@ export default function ProfilisPage() {
             sleep_end: null,
           };
           const { data, error } = await supabase
-            .from(\"events\")
+            .from("events")
             .insert(payload)
-            .select(\"*\")
+            .select("*")
             .single();
           if (error) throw error;
           setEvents((prev) => [
             {
               id: data.id,
-              type: \"diaper\",
+              type: "diaper",
               time: data.time,
               diaperKind: data.diaper_kind,
             },
@@ -527,7 +529,7 @@ export default function ProfilisPage() {
           const payload = {
             user_id: user.id,
             baby_id: babyId ?? undefined,
-            type: \"sleep\",
+            type: "sleep",
             time: timeIso,
             sleep_end: sleepEndInput
               ? fromLocalDateTimeInputValue(sleepEndInput)
@@ -538,15 +540,15 @@ export default function ProfilisPage() {
             diaper_kind: null,
           };
           const { data, error } = await supabase
-            .from(\"events\")
+            .from("events")
             .insert(payload)
-            .select(\"*\")
+            .select("*")
             .single();
           if (error) throw error;
           setEvents((prev) => [
             {
               id: data.id,
-              type: \"sleep\",
+              type: "sleep",
               time: data.time,
               sleepEnd: data.sleep_end ?? undefined,
             },
@@ -554,11 +556,11 @@ export default function ProfilisPage() {
           ]);
         }
       } else {
-        if (eventType === \"feeding\") {
+        if (eventType === "feeding") {
           const isAmountBased =
-            feedingMethod === \"formula\" || feedingMethod === \"pumped\";
+            feedingMethod === "formula" || feedingMethod === "pumped";
           const payload = {
-            type: \"feeding\",
+            type: "feeding",
             time: timeIso,
             feeding_method: feedingMethod,
             amount_ml:
@@ -571,10 +573,10 @@ export default function ProfilisPage() {
             sleep_end: null,
           };
           const { data, error } = await supabase
-            .from(\"events\")
+            .from("events")
             .update(payload)
-            .eq(\"id\", editingEventId)
-            .select(\"*\")
+            .eq("id", editingEventId)
+            .select("*")
             .single();
           if (error) throw error;
           setEvents((prev) =>
@@ -582,7 +584,7 @@ export default function ProfilisPage() {
               e.id === data.id
                 ? {
                     id: data.id,
-                    type: \"feeding\" as const,
+                    type: "feeding" as const,
                     time: data.time,
                     feedingMethod: data.feeding_method,
                     amountMl: data.amount_ml ?? undefined,
@@ -591,9 +593,9 @@ export default function ProfilisPage() {
                 : e
             )
           );
-        } else if (eventType === \"diaper\") {
+        } else if (eventType === "diaper") {
           const payload = {
-            type: \"diaper\",
+            type: "diaper",
             time: timeIso,
             diaper_kind: diaperKind,
             feeding_method: null,
@@ -602,10 +604,10 @@ export default function ProfilisPage() {
             sleep_end: null,
           };
           const { data, error } = await supabase
-            .from(\"events\")
+            .from("events")
             .update(payload)
-            .eq(\"id\", editingEventId)
-            .select(\"*\")
+            .eq("id", editingEventId)
+            .select("*")
             .single();
           if (error) throw error;
           setEvents((prev) =>
@@ -613,7 +615,7 @@ export default function ProfilisPage() {
               e.id === data.id
                 ? {
                     id: data.id,
-                    type: \"diaper\" as const,
+                    type: "diaper" as const,
                     time: data.time,
                     diaperKind: data.diaper_kind,
                   }
@@ -622,7 +624,7 @@ export default function ProfilisPage() {
           );
         } else {
           const payload = {
-            type: \"sleep\",
+            type: "sleep",
             time: timeIso,
             sleep_end: sleepEndInput
               ? fromLocalDateTimeInputValue(sleepEndInput)
@@ -633,10 +635,10 @@ export default function ProfilisPage() {
             diaper_kind: null,
           };
           const { data, error } = await supabase
-            .from(\"events\")
+            .from("events")
             .update(payload)
-            .eq(\"id\", editingEventId)
-            .select(\"*\")
+            .eq("id", editingEventId)
+            .select("*")
             .single();
           if (error) throw error;
           setEvents((prev) =>
