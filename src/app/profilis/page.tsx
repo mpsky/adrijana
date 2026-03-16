@@ -64,9 +64,13 @@ export default function ProfilisPage() {
   const [babySaved, setBabySaved] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
-  const [inviteHistory, setInviteHistory] = useState<{ id: string; code: string; created_at: string; used_by: string | null }[]>([]);
+  const [inviteHistory, setInviteHistory] = useState<
+    { id: string; code: string; created_at: string; used_by: string | null }[]
+  >([]);
   const [acceptCodeInput, setAcceptCodeInput] = useState("");
-  const [acceptInviteError, setAcceptInviteError] = useState<string | null>(null);
+  const [acceptInviteError, setAcceptInviteError] = useState<string | null>(
+    null
+  );
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
   const [acceptSuccess, setAcceptSuccess] = useState(false);
   const [refreshBabyKey, setRefreshBabyKey] = useState(0);
@@ -277,7 +281,10 @@ export default function ProfilisPage() {
       .eq("baby_id", babyId)
       .order("created_at", { ascending: false })
       .limit(1);
-    setInviteHistory((data as { id: string; code: string; created_at: string; used_by: string | null }[]) ?? []);
+    setInviteHistory(
+      (data as { id: string; code: string; created_at: string; used_by: string | null }[]) ??
+        []
+    );
   }
 
   useEffect(() => {
@@ -444,9 +451,7 @@ export default function ProfilisPage() {
     } else {
       setAmountMl("");
       setDurationMinutes("");
-      setSleepEndInput(
-        e.sleepEnd ? toLocalDateTimeInputValue(e.sleepEnd) : ""
-      );
+      setSleepEndInput(e.sleepEnd ? toLocalDateTimeInputValue(e.sleepEnd) : "");
     }
   }
 
@@ -676,240 +681,274 @@ export default function ProfilisPage() {
 
   if (isLoading) {
     return (
-      <div className=\"flex min-h-screen items-center justify-center\">
-        <p className=\"text-sm text-slate-500\">Kraunama...</p>
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-slate-500">Kraunama...</p>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className=\"flex min-h-screen items-center justify-center\">
-        <p className=\"text-sm text-slate-500\">Nukreipiama į prisijungimą...</p>
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-slate-500">Nukreipiama į prisijungimą...</p>
       </div>
     );
   }
 
   return (
-    <div className=\"min-h-screen text-slate-900\">
-      <main className=\"mx-auto flex max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10\">
-        <section className=\"rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5\">
-          <div className=\"flex items-center gap-3\">
-            <div className=\"flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200\">
+    <div className="min-h-screen text-slate-900">
+      <main className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
+        {/* Profilio header */}
+        <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200">
               <svg
-                viewBox=\"0 0 24 24\"
-                className=\"h-6 w-6\"
-                fill=\"none\"
-                stroke=\"currentColor\"
-                strokeWidth=\"2\"
-                strokeLinecap=\"round\"
-                strokeLinejoin=\"round\"
+                viewBox="0 0 24 24"
+                className="h-6 w-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <path d=\"M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2\" />
-                <circle cx=\"12\" cy=\"7\" r=\"4\" />
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
               </svg>
             </div>
-            <div className=\"min-w-0 flex-1\">
-              <h1 className=\"text-sm font-semibold text-slate-800\">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-sm font-semibold text-slate-800">
                 Mano profilis
               </h1>
-              <p className=\"truncate text-xs text-slate-600\">{user.email}</p>
+              <p className="truncate text-xs text-slate-600">{user.email}</p>
               {user.created_at && (
-                <p className=\"mt-0.5 text-[11px] text-slate-400\">
-                  Paskyra nuo{\" \"}
-                  {new Date(user.created_at).toLocaleDateString(\"lt-LT\")}
+                <p className="mt-0.5 text-[11px] text-slate-400">
+                  Paskyra nuo{" "}
+                  {new Date(user.created_at).toLocaleDateString("lt-LT")}
                 </p>
               )}
             </div>
           </div>
 
-          <div className=\"mt-6 flex flex-wrap gap-3\">
+          <div className="mt-6 flex flex-wrap gap-3">
             <Button
-              type=\"button\"
-              variant=\"secondary\"
+              type="button"
+              variant="secondary"
               onClick={async () => {
                 await signOut();
-                router.push(\"/\");
+                router.push("/");
                 router.refresh();
               }}
-              className=\"border border-slate-200 text-slate-700 hover:bg-slate-100\"
+              className="border border-slate-200 text-slate-700 hover:bg-slate-100"
             >
               Atsijungti
             </Button>
           </div>
         </section>
 
-        <div className=\"grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6\">
-          <section className=\"rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5\">
-            <h2 className=\"text-[11px] font-semibold uppercase tracking-wide text-slate-500\">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6">
+          {/* Kūdikio registracija */}
+          <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Kūdikio registracija
             </h2>
-            <p className=\"mt-1 text-xs text-slate-600\">
-              Vardas, lytis, gimimo data ir laikas – rodomi pagrindiniame puslapyje ir svorio skyriuje.
+            <p className="mt-1 text-xs text-slate-600">
+              Vardas, lytis, gimimo data ir laikas – rodomi pagrindiniame
+              puslapyje ir svorio skyriuje.
             </p>
             {isBabyLoading ? (
-              <p className=\"mt-2 text-xs text-slate-500\">Kraunama...</p>
+              <p className="mt-2 text-xs text-slate-500">Kraunama...</p>
             ) : (
               <form
                 onSubmit={handleSaveBaby}
-                className=\"mt-4 flex flex-col gap-3\"
+                className="mt-4 flex flex-col gap-3"
               >
-                <div className=\"min-w-0 flex-1 space-y-1\">
-                  <label className=\"block text-[11px] font-medium text-slate-600\">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
                     Vardas
                   </label>
                   <input
-                    type=\"text\"
+                    type="text"
                     value={babyName}
                     onChange={(e) => setBabyName(e.target.value)}
-                    placeholder=\"pvz. Adrijana\"
-                    className=\"w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100\"
+                    placeholder="pvz. Adrijana"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
                   />
                 </div>
-                <div className=\"min-w-0 flex-1 space-y-1\">
-                  <label className=\"block text-[11px] font-medium text-slate-600\">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
                     Lytis
                   </label>
-                  <div className=\"grid w-full grid-cols-2 gap-3\">
+                  <div className="grid w-full grid-cols-2 gap-3">
                     <button
-                      type=\"button\"
-                      onClick={() => setBabyGender(babyGender === \"female\" ? \"\" : \"female\")}
-                      title=\"Mergaitė\"
+                      type="button"
+                      onClick={() =>
+                        setBabyGender(babyGender === "female" ? "" : "female")
+                      }
+                      title="Mergaitė"
                       className={`flex w-full min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 transition focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${
-                        babyGender === \"female\"
-                          ? \"border-sky-500 bg-sky-50 ring-2 ring-sky-200\"
-                          : \"border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100\"
+                        babyGender === "female"
+                          ? "border-sky-500 bg-sky-50 ring-2 ring-sky-200"
+                          : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100"
                       }`}
                     >
-                      <img src=\"/icons/baby-girl.svg\" alt=\"\" className=\"h-14 w-14 shrink-0 sm:h-16 sm:w-16\" />
-                      <span className=\"text-[11px] font-medium text-slate-700\">Mergaitė</span>
+                      <img
+                        src="/icons/baby-girl.svg"
+                        alt=""
+                        className="h-14 w-14 shrink-0 sm:h-16 sm:w-16"
+                      />
+                      <span className="text-[11px] font-medium text-slate-700">
+                        Mergaitė
+                      </span>
                     </button>
                     <button
-                      type=\"button\"
-                      onClick={() => setBabyGender(babyGender === \"male\" ? \"\" : \"male\")}
-                      title=\"Berniukas\"
+                      type="button"
+                      onClick={() =>
+                        setBabyGender(babyGender === "male" ? "" : "male")
+                      }
+                      title="Berniukas"
                       className={`flex w-full min-w-0 flex-col items-center justify-center gap-2 rounded-2xl border-2 py-4 transition focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${
-                        babyGender === \"male\"
-                          ? \"border-sky-500 bg-sky-50 ring-2 ring-sky-200\"
-                          : \"border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100\"
+                        babyGender === "male"
+                          ? "border-sky-500 bg-sky-50 ring-2 ring-sky-200"
+                          : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100"
                       }`}
                     >
-                      <img src=\"/icons/baby-boy.svg\" alt=\"\" className=\"h-14 w-14 shrink-0 sm:h-16 sm:w-16\" />
-                      <span className=\"text-[11px] font-medium text-slate-700\">Berniukas</span>
+                      <img
+                        src="/icons/baby-boy.svg"
+                        alt=""
+                        className="h-14 w-14 shrink-0 sm:h-16 sm:w-16"
+                      />
+                      <span className="text-[11px] font-medium text-slate-700">
+                        Berniukas
+                      </span>
                     </button>
                   </div>
                 </div>
-                <div className=\"min-w-0 flex-1 space-y-1\">
-                  <label className=\"block text-[11px] font-medium text-slate-600\">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <label className="block text-[11px] font-medium text-slate-600">
                     Gimimo data ir laikas
                   </label>
                   <input
-                    type=\"datetime-local\"
+                    type="datetime-local"
                     value={babyBirthInput}
                     onChange={(e) => setBabyBirthInput(e.target.value)}
-                    className=\"w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100\"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-100"
                   />
                 </div>
                 <Button
-                  type=\"submit\"
+                  type="submit"
                   disabled={!babyName.trim()}
-                  className=\"w-full bg-sky-600 text-xs text-white hover:bg-sky-700 sm:w-auto\"
+                  className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700 sm:w-auto"
                 >
-                  {babyId ? \"Išsaugoti kūdikį\" : \"Registruoti kūdikį\"}
+                  {babyId ? "Išsaugoti kūdikį" : "Registruoti kūdikį"}
                 </Button>
               </form>
             )}
             {babySaved && (
-              <p className=\"mt-2 text-[11px] text-emerald-600\">Kūdikio duomenys išsaugoti.</p>
+              <p className="mt-2 text-[11px] text-emerald-600">
+                Kūdikio duomenys išsaugoti.
+              </p>
             )}
             {babyError && (
-              <p className=\"mt-2 text-[11px] text-rose-600\">{babyError}</p>
+              <p className="mt-2 text-[11px] text-rose-600">{babyError}</p>
             )}
           </section>
 
-          <section className=\"rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5\">
-            <h2 className=\"text-[11px] font-semibold uppercase tracking-wide text-slate-500\">
+          {/* Pakviesti kitą tėtį / mamą */}
+          <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Pakviesti kitą tėtį / mamą
             </h2>
-            <p className=\"mt-1 text-xs text-slate-600\">
-              Sugeneruok pakvietimo kodą ir pasidalink juo su kitu tėčiu ar mama.
-              Įvedę kodą, jie matys tą patį kūdikį ir įrašus.
+            <p className="mt-1 text-xs text-slate-600">
+              Sugeneruok pakvietimo kodą ir pasidalink juo su kitu tėčiu ar
+              mama. Įvedę kodą, jie matys tą patį kūdikį ir įrašus.
             </p>
-            <div className=\"mt-4 w-full\">
+            <div className="mt-4 w-full">
               <Button
-                type=\"button\"
+                type="button"
                 disabled={!babyId || isGeneratingInvite}
-                className=\"w-full bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60\"
+                className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={handleGenerateInvite}
               >
-                {isGeneratingInvite ? \"Generuojama...\" : \"Sugeneruoti pakvietimo kodą\"}
+                {isGeneratingInvite ? "Generuojama..." : "Sugeneruoti pakvietimo kodą"}
               </Button>
               {!babyId && (
-                <p className=\"mt-2 text-[11px] text-slate-500\">
+                <p className="mt-2 text-[11px] text-slate-500">
                   Pirma užregistruok kūdikį kairėje.
                 </p>
               )}
             </div>
             {inviteCode && (
-              <div className=\"mt-3 rounded-2xl bg-sky-50 px-3 py-2 text-[11px] text-sky-800 ring-1 ring-sky-100\">
-                <p className=\"font-semibold\">Pakvietimo kodas:</p>
-                <p className=\"mt-1 font-mono text-sm tracking-wide\">
+              <div className="mt-3 rounded-2xl bg-sky-50 px-3 py-2 text-[11px] text-sky-800 ring-1 ring-sky-100">
+                <p className="font-semibold">Pakvietimo kodas:</p>
+                <p className="mt-1 font-mono text-sm tracking-wide">
                   {inviteCode}
                 </p>
-                <p className=\"mt-1 text-[11px] text-sky-700\">
+                <p className="mt-1 text-[11px] text-sky-700">
                   Nusiųsk šį kodą kitam tėčiui ar mamai. Jie gali jį įvesti
                   žemiau šiame bloke.
                 </p>
               </div>
             )}
-            <div className=\"mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3\">
-              <p className=\"text-[11px] font-semibold uppercase tracking-wide text-slate-600\">
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 Priimti pakvietimą
               </p>
-              <p className=\"mt-0.5 text-[11px] text-slate-500\">
-                Gavote kodą iš kito tėčio ar mamos? Įveskite jį žemiau ir paspauskite „Priimti“.
+              <p className="mt-0.5 text-[11px] text-slate-500">
+                Gavote kodą iš kito tėčio ar mamos? Įveskite jį žemiau ir
+                paspauskite „Priimti“.
               </p>
-              <form onSubmit={handleAcceptInvite} className=\"mt-3 flex flex-col gap-2 sm:flex-row sm:items-center\">
+              <form
+                onSubmit={handleAcceptInvite}
+                className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
+              >
                 <input
-                  type=\"text\"
+                  type="text"
                   value={acceptCodeInput}
-                  onChange={(e) => setAcceptCodeInput(e.target.value.toUpperCase())}
-                  placeholder=\"Pakvietimo kodas\"
-                  className=\"min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] font-mono tracking-wide shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100\"
+                  onChange={(e) =>
+                    setAcceptCodeInput(e.target.value.toUpperCase())
+                  }
+                  placeholder="Pakvietimo kodas"
+                  className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[16px] font-mono tracking-wide shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                   maxLength={20}
                 />
                 <Button
-                  type=\"submit\"
+                  type="submit"
                   disabled={!acceptCodeInput.trim() || isAcceptingInvite}
-                  className=\"shrink-0 bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:opacity-60\"
+                  className="shrink-0 bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:opacity-60"
                 >
-                  {isAcceptingInvite ? \"Vykdoma...\" : \"Priimti\"}
+                  {isAcceptingInvite ? "Vykdoma..." : "Priimti"}
                 </Button>
               </form>
               {acceptInviteError && (
-                <p className=\"mt-2 text-[11px] text-rose-600\">{acceptInviteError}</p>
+                <p className="mt-2 text-[11px] text-rose-600">
+                  {acceptInviteError}
+                </p>
               )}
               {acceptSuccess && (
-                <p className=\"mt-2 text-[11px] text-emerald-600\">Pakvietimas priimtas. Dabar matote tą patį kūdikį.</p>
+                <p className="mt-2 text-[11px] text-emerald-600">
+                  Pakvietimas priimtas. Dabar matote tą patį kūdikį.
+                </p>
               )}
             </div>
             {inviteHistory.length > 0 && (
-              <div className=\"mt-4 rounded-2xl border border-slate-100 bg-slate-50/60 px-3 py-2\">
-                <p className=\"text-[11px] font-semibold uppercase tracking-wide text-slate-500\">
+              <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50/60 px-3 py-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Paskutinis kodas
                 </p>
                 {(() => {
                   const inv = inviteHistory[0];
                   return (
-                    <div className=\"mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-2 py-1.5 text-[11px] text-slate-700 ring-1 ring-slate-100\">
-                      <span className=\"font-mono tracking-wide\">{inv.code}</span>
-                      <span className=\"text-slate-500\">
-                        {new Date(inv.created_at).toLocaleString(\"lt-LT\", {
-                          dateStyle: \"short\",
-                          timeStyle: \"short\",
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-2 py-1.5 text-[11px] text-slate-700 ring-1 ring-slate-100">
+                      <span className="font-mono tracking-wide">
+                        {inv.code}
+                      </span>
+                      <span className="text-slate-500">
+                        {new Date(inv.created_at).toLocaleString("lt-LT", {
+                          dateStyle: "short",
+                          timeStyle: "short",
                         })}
                         {inv.used_by ? (
-                          <span className=\"ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700\">
+                          <span className="ml-1.5 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-700">
                             Panaudotas
                           </span>
                         ) : null}
@@ -922,62 +961,81 @@ export default function ProfilisPage() {
           </section>
         </div>
 
-        <section className=\"rounded-3xl border-2 border-slate-200 bg-slate-50/80 p-4 shadow-sm backdrop-blur sm:p-5\">
-          <h2 className=\"text-[11px] font-semibold uppercase tracking-wide text-slate-600\">
+        {/* Įrašų tvarkymas (admin) */}
+        <section className="rounded-3xl border-2 border-slate-200 bg-slate-50/80 p-4 shadow-sm backdrop-blur sm:p-5">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
             Įrašų tvarkymas (admin)
           </h2>
-          <p className=\"mt-1 text-xs text-slate-600\">
-            Pridėk senų dienų įrašus, redaguok ar trink – laisvas laiko pasirinkimas.
+          <p className="mt-1 text-xs text-slate-600">
+            Pridėk senų dienų įrašus, redaguok ar trink – laisvas laiko
+            pasirinkimas.
           </p>
 
-          <div className=\"mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,1fr)]\">
-            <div className=\"min-w-0 space-y-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 sm:p-5\">
-              <div className=\"flex items-center justify-between gap-2\">
-                <p className=\"text-[11px] font-semibold uppercase tracking-wide text-slate-500\">
-                  {editingEventId ? \"Redaguoti įrašą\" : \"Naujas įrašas\"}
+          <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(300px,1fr)]">
+            {/* Forma */}
+            <div className="min-w-0 space-y-4 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 sm:p-5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {editingEventId ? "Redaguoti įrašą" : "Naujas įrašas"}
                 </p>
                 {editingEventId && (
                   <button
-                    type=\"button\"
+                    type="button"
                     onClick={resetEventForm}
-                    className=\"shrink-0 text-[11px] font-medium text-slate-500 underline-offset-2 hover:underline\"
+                    className="shrink-0 text-[11px] font-medium text-slate-500 underline-offset-2 hover:underline"
                   >
                     Atšaukti
                   </button>
                 )}
               </div>
 
-              <div className=\"space-y-4 text-xs\">
-                <div className=\"space-y-1.5\">
-                  <label className=\"block text-[11px] font-medium text-slate-600\">Data ir laikas</label>
+              <div className="space-y-4 text-xs">
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Data ir laikas
+                  </label>
                   <input
-                    type=\"datetime-local\"
+                    type="datetime-local"
                     value={timeInput}
                     onChange={(e) => setTimeInput(e.target.value)}
-                    className=\"w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100\"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                   />
                 </div>
-                <div className=\"space-y-1.5\">
-                  <label className=\"block text-[11px] font-medium text-slate-600\">Tipas</label>
-                  <div className=\"flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium\">
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Tipas
+                  </label>
+                  <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium">
                     <button
-                      type=\"button\"
-                      onClick={() => setEventType(\"feeding\")}
-                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${eventType === \"feeding\" ? \"bg-sky-600 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}
+                      type="button"
+                      onClick={() => setEventType("feeding")}
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                        eventType === "feeding"
+                          ? "bg-sky-600 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
                     >
                       Maitinimas
                     </button>
                     <button
-                      type=\"button\"
-                      onClick={() => setEventType(\"diaper\")}
-                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${eventType === \"diaper\" ? \"bg-amber-500 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}
+                      type="button"
+                      onClick={() => setEventType("diaper")}
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                        eventType === "diaper"
+                          ? "bg-amber-500 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
                     >
                       Sauskelnės
                     </button>
                     <button
-                      type=\"button\"
-                      onClick={() => setEventType(\"sleep\")}
-                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${eventType === \"sleep\" ? \"bg-indigo-600 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}
+                      type="button"
+                      onClick={() => setEventType("sleep")}
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                        eventType === "sleep"
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
                     >
                       Miegas
                     </button>
@@ -985,100 +1043,261 @@ export default function ProfilisPage() {
                 </div>
               </div>
 
-              {eventType === \"feeding\" && (
-                <div className=\"space-y-4 text-xs\">
-                  <div className=\"space-y-1.5\">
-                    <label className=\"block text-[11px] font-medium text-slate-600\">Maitinimo būdas</label>
-                    <div className=\"flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium\">
-                      <button type=\"button\" onClick={() => setFeedingMethod(\"formula\")} className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${feedingMethod === \"formula\" ? \"bg-sky-600 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}>Mišinėlis (ml)</button>
-                      <button type=\"button\" onClick={() => setFeedingMethod(\"breast\")} className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${feedingMethod === \"breast\" ? \"bg-emerald-600 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}>Krūtimi (min)</button>
-                      <button type=\"button\" onClick={() => setFeedingMethod(\"pumped\")} className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${feedingMethod === \"pumped\" ? \"bg-sky-600 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}>Nutrauktas (ml)</button>
+              {eventType === "feeding" && (
+                <div className="space-y-4 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="block text-[11px] font-medium text-slate-600">
+                      Maitinimo būdas
+                    </label>
+                    <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium">
+                      <button
+                        type="button"
+                        onClick={() => setFeedingMethod("formula")}
+                        className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                          feedingMethod === "formula"
+                            ? "bg-sky-600 text-white shadow-sm"
+                            : "text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        Mišinėlis (ml)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeedingMethod("breast")}
+                        className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                          feedingMethod === "breast"
+                            ? "bg-emerald-600 text-white shadow-sm"
+                            : "text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        Krūtimi (min)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFeedingMethod("pumped")}
+                        className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                          feedingMethod === "pumped"
+                            ? "bg-sky-600 text-white shadow-sm"
+                            : "text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        Nutrauktas (ml)
+                      </button>
                     </div>
                   </div>
-                  {feedingMethod === \"formula\" || feedingMethod === \"pumped\" ? (
-                    <div className=\"space-y-1.5\">
-                      <label className=\"block text-[11px] font-medium text-slate-600\">Kiekis (ml)</label>
-                      <input type=\"number\" min={0} value={amountMl} onChange={(e) => setAmountMl(e.target.value)} placeholder=\"pvz. 90\" className=\"w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100\" />
+                  {feedingMethod === "formula" || feedingMethod === "pumped" ? (
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-medium text-slate-600">
+                        Kiekis (ml)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={amountMl}
+                        onChange={(e) => setAmountMl(e.target.value)}
+                        placeholder="pvz. 90"
+                        className="w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                      />
                     </div>
                   ) : (
-                    <div className=\"space-y-1.5\">
-                      <label className=\"block text-[11px] font-medium text-slate-600\">Trukmė (min)</label>
-                      <input type=\"number\" min={0} value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} className=\"w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100\" />
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-medium text-slate-600">
+                        Trukmė (min)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={durationMinutes}
+                        onChange={(e) => setDurationMinutes(e.target.value)}
+                        className="w-full max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                      />
                     </div>
                   )}
                 </div>
               )}
 
-              {eventType === \"diaper\" && (
-                <div className=\"space-y-1.5\">
-                  <label className=\"block text-[11px] font-medium text-slate-600\">Sauskelnės</label>
-                  <div className=\"flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium\">
-                    <button type=\"button\" onClick={() => setDiaperKind(\"wet\")} className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${diaperKind === \"wet\" ? \"bg-sky-500 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}>Šlapias</button>
-                    <button type=\"button\" onClick={() => setDiaperKind(\"dirty\")} className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${diaperKind === \"dirty\" ? \"bg-amber-500 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}>Purvinas</button>
-                    <button type=\"button\" onClick={() => setDiaperKind(\"both\")} className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${diaperKind === \"both\" ? \"bg-emerald-500 text-white shadow-sm\" : \"text-slate-600 hover:bg-slate-100\"}`}>Abu</button>
+              {eventType === "diaper" && (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Sauskelnės
+                  </label>
+                  <div className="flex flex-wrap gap-2 rounded-2xl bg-slate-50 p-1.5 ring-1 ring-slate-200 text-[11px] font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setDiaperKind("wet")}
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                        diaperKind === "wet"
+                          ? "bg-sky-500 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      Šlapias
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDiaperKind("dirty")}
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                        diaperKind === "dirty"
+                          ? "bg-amber-500 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      Purvinas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDiaperKind("both")}
+                      className={`whitespace-nowrap rounded-xl px-3 py-2 transition ${
+                        diaperKind === "both"
+                          ? "bg-emerald-500 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      Abu
+                    </button>
                   </div>
                 </div>
               )}
 
-              {eventType === \"sleep\" && (
-                <div className=\"space-y-1.5\">
-                  <label className=\"block text-[11px] font-medium text-slate-600\">Miego pabaiga (nebūtina)</label>
-                  <input type=\"datetime-local\" value={sleepEndInput} onChange={(e) => setSleepEndInput(e.target.value)} className=\"w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100\" />
+              {eventType === "sleep" && (
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-medium text-slate-600">
+                    Miego pabaiga (nebūtina)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={sleepEndInput}
+                    onChange={(e) => setSleepEndInput(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                  />
                 </div>
               )}
 
-              {eventsError && <p className=\"text-[11px] text-rose-600\">{eventsError}</p>}
+              {eventsError && (
+                <p className="text-[11px] text-rose-600">{eventsError}</p>
+              )}
 
-              <div className=\"mt-2 flex flex-wrap items-center justify-between gap-2\">
-                <Button type=\"button\" onClick={handleSaveEvent} disabled={eventsSaving} className=\"bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:opacity-60\">
-                  {eventsSaving ? \"Saugoma...\" : editingEventId ? \"Išsaugoti pakeitimus\" : \"Pridėti įrašą\"}
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <Button
+                  type="button"
+                  onClick={handleSaveEvent}
+                  disabled={eventsSaving}
+                  className="bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:opacity-60"
+                >
+                  {eventsSaving
+                    ? "Saugoma..."
+                    : editingEventId
+                    ? "Išsaugoti pakeitimus"
+                    : "Pridėti įrašą"}
                 </Button>
-                <button type=\"button\" onClick={resetEventForm} className=\"text-[11px] font-medium text-slate-500 underline-offset-2 hover:underline\">Išvalyti formą</button>
+                <button
+                  type="button"
+                  onClick={resetEventForm}
+                  className="text-[11px] font-medium text-slate-500 underline-offset-2 hover:underline"
+                >
+                  Išvalyti formą
+                </button>
               </div>
             </div>
 
-            <div className=\"min-w-0 space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 sm:p-5\">
-              <div className=\"flex min-w-0 items-center justify-between gap-2\">
-                <p className=\"min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500\">Visi įrašai</p>
-                {eventsLoading && <span className=\"shrink-0 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-100\"><span className=\"h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500\" /> Kraunama...</span>}
+            {/* Visi įrašai */}
+            <div className="min-w-0 space-y-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100 sm:p-5">
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <p className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Visi įrašai
+                </p>
+                {eventsLoading && (
+                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 ring-1 ring-sky-100">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />{" "}
+                    Kraunama...
+                  </span>
+                )}
               </div>
-              <div className=\"max-h-[420px] min-w-0 space-y-3 overflow-y-auto pr-1 text-[11px] sm:text-xs\">
-                {sortedByDay.length === 0 && !eventsLoading && <p className=\"text-[11px] text-slate-500\">Nėra įrašų.</p>}
+              <div className="max-h-[420px] min-w-0 space-y-3 overflow-y-auto pr-1 text-[11px] sm:text-xs">
+                {sortedByDay.length === 0 && !eventsLoading && (
+                  <p className="text-[11px] text-slate-500">Nėra įrašų.</p>
+                )}
                 {sortedByDay.map(([day, dayEvents]) => (
-                  <div key={day} className=\"rounded-2xl border border-slate-100 bg-slate-50/60 p-2\">
-                    <div className=\"flex items-center justify-between gap-2\">
-                      <p className=\"truncate text-[11px] font-semibold text-slate-700\">{day}</p>
-                      <span className=\"shrink-0 text-[10px] text-slate-400\">{dayEvents.length} įr.</span>
+                  <div
+                    key={day}
+                    className="rounded-2xl border border-slate-100 bg-slate-50/60 p-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-[11px] font-semibold text-slate-700">
+                        {day}
+                      </p>
+                      <span className="shrink-0 text-[10px] text-slate-400">
+                        {dayEvents.length} įr.
+                      </span>
                     </div>
-                    <div className=\"mt-1.5 space-y-1.5\">
-                      {dayEvents.slice().sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime()).map((e) => (
-                        <div key={e.id} className=\"flex min-w-0 items-center justify-between gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm ring-1 ring-slate-100\">
-                          <div className=\"min-w-0 flex-1\">
-                            <p className=\"truncate text-[10px] font-medium text-slate-800 sm:text-[11px]\">
-                              <span className=\"font-mono\">{formatTimeLabel(e.time)}</span>{\" "}
-                              {e.type === \"feeding\" &&
-                                (e.feedingMethod === \"formula\"
-                                  ? `Mišinėlis ${(e.amountMl ?? 0)} ml`
-                                  : e.feedingMethod === \"pumped\"
-                                  ? `Nutrauktas ${(e.amountMl ?? 0)} ml`
-                                  : `Krūtimi ${
-                                      (e as FeedingEvent).breastSide === \"left\"
-                                        ? \"(kairė) \"
-                                        : (e as FeedingEvent).breastSide ===
-                                          \"right\"
-                                        ? \"(dešinė) \"
-                                        : \"\"
-                                    }${(e.durationMinutes ?? 0)} min`)}
-                              {e.type === \"diaper\" && `Sauskel. ${e.diaperKind === \"wet\" ? \"šlapias\" : e.diaperKind === \"dirty\" ? \"purvinas\" : \"abu\"}`}
-                              {e.type === \"sleep\" && (e.sleepEnd ? `Miegas ${formatTimeLabel(e.time)}–${formatTimeLabel(e.sleepEnd)}` : `Miegas nuo ${formatTimeLabel(e.time)}`)}
-                            </p>
+                    <div className="mt-1.5 space-y-1.5">
+                      {dayEvents
+                        .slice()
+                        .sort(
+                          (a, b) =>
+                            new Date(a.time).getTime() -
+                            new Date(b.time).getTime()
+                        )
+                        .map((e) => (
+                          <div
+                            key={e.id}
+                            className="flex min-w-0 items-center justify-between gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm ring-1 ring-slate-100"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[10px] font-medium text-slate-800 sm:text-[11px]">
+                                <span className="font-mono">
+                                  {formatTimeLabel(e.time)}
+                                </span>{" "}
+                                {e.type === "feeding" &&
+                                  (e.feedingMethod === "formula"
+                                    ? `Mišinėlis ${(e.amountMl ?? 0)} ml`
+                                    : e.feedingMethod === "pumped"
+                                    ? `Nutrauktas ${(e.amountMl ?? 0)} ml`
+                                    : `Krūtimi ${
+                                        (e as FeedingEvent).breastSide ===
+                                        "left"
+                                          ? "(kairė) "
+                                          : (e as FeedingEvent).breastSide ===
+                                            "right"
+                                          ? "(dešinė) "
+                                          : ""
+                                      }${(e.durationMinutes ?? 0)} min`)}
+                                {e.type === "diaper" &&
+                                  `Sauskel. ${
+                                    e.diaperKind === "wet"
+                                      ? "šlapias"
+                                      : e.diaperKind === "dirty"
+                                      ? "purvinas"
+                                      : "abu"
+                                  }`}
+                                {e.type === "sleep" &&
+                                  (e.sleepEnd
+                                    ? `Miegas ${formatTimeLabel(
+                                        e.time
+                                      )}–${formatTimeLabel(e.sleepEnd)}`
+                                    : `Miegas nuo ${formatTimeLabel(
+                                        e.time
+                                      )}`)}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => startEditEvent(e)}
+                                className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-medium text-slate-700 hover:bg-slate-200 sm:text-[10px]"
+                              >
+                                Redaguoti
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEvent(e.id)}
+                                className="rounded-full bg-rose-50 px-2 py-1 text-[9px] font-medium text-rose-600 hover:bg-rose-100 sm:text-[10px]"
+                              >
+                                Trinti
+                              </button>
+                            </div>
                           </div>
-                          <div className=\"flex shrink-0 items-center gap-1\">
-                            <button type=\"button\" onClick={() => startEditEvent(e)} className=\"rounded-full bg-slate-100 px-2 py-1 text-[9px] font-medium text-slate-700 hover:bg-slate-200 sm:text-[10px]\">Redaguoti</button>
-                            <button type=\"button\" onClick={() => handleDeleteEvent(e.id)} className=\"rounded-full bg-rose-50 px-2 py-1 text-[9px] font-medium text-rose-600 hover:bg-rose-100 sm:text-[10px]\">Trinti</button>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   </div>
                 ))}
@@ -1090,4 +1309,3 @@ export default function ProfilisPage() {
     </div>
   );
 }
-
