@@ -177,19 +177,20 @@ export default function ProfilisPage() {
       return Number.isNaN(d.getTime()) ? null : d.toISOString();
     })();
 
-    const genderValue = babyGender === \"female\" || babyGender === \"male\" ? babyGender : null;
+    const genderValue =
+      babyGender === "female" || babyGender === "male" ? babyGender : null;
 
     try {
       if (babyId) {
         const { data, error } = await supabase
-          .from(\"babies\")
+          .from("babies")
           .update({
             name,
             birth_iso: birthIso,
             gender: genderValue,
           })
-          .eq(\"id\", babyId)
-          .select(\"*\")
+          .eq("id", babyId)
+          .select("*")
           .maybeSingle();
 
         if (error) throw error;
@@ -202,7 +203,7 @@ export default function ProfilisPage() {
         }
       } else {
         const { data, error } = await supabase
-          .from(\"babies\")
+          .from("babies")
           .insert({
             name,
             birth_iso: birthIso,
@@ -217,7 +218,7 @@ export default function ProfilisPage() {
         const newBabyId = data.id as string;
         setBabyId(newBabyId);
 
-        await supabase.from(\"baby_members\").insert({
+        await supabase.from("baby_members").insert({
           baby_id: newBabyId,
           user_id: user.id,
           role: \"parent\",
@@ -233,9 +234,11 @@ export default function ProfilisPage() {
 
       setBabySaved(true);
       setTimeout(() => setBabySaved(false), 2000);
-      setBabyGenderStorage(genderValue === \"female\" || genderValue === \"male\" ? genderValue : \"\");
+      setBabyGenderStorage(
+        genderValue === "female" || genderValue === "male" ? genderValue : ""
+      );
     } catch (err: any) {
-      setBabyError(err.message ?? \"Nepavyko išsaugoti kūdikio duomenų.\");
+      setBabyError(err.message ?? "Nepavyko išsaugoti kūdikio duomenų.");
     }
   }
 
