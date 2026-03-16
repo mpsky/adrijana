@@ -646,7 +646,7 @@ export default function ProfilisPage() {
               e.id === data.id
                 ? {
                     id: data.id,
-                    type: \"sleep\" as const,
+                    type: "sleep" as const,
                     time: data.time,
                     sleepEnd: data.sleep_end ?? undefined,
                   }
@@ -657,14 +657,14 @@ export default function ProfilisPage() {
       }
       resetEventForm();
     } catch (err: any) {
-      setEventsError(err.message ?? \"Nepavyko išsaugoti.\");
+      setEventsError(err.message ?? "Nepavyko išsaugoti.");
     } finally {
       setEventsSaving(false);
     }
   }
 
   async function handleDeleteEvent(id: string) {
-    if (!confirm(\"Tikrai ištrinti šį įrašą?\")) return;
+    if (!confirm("Tikrai ištrinti šį įrašą?")) return;
     const prev = events;
     setEvents((cur) => cur.filter((e) => e.id !== id));
     const { error } = await supabase.from(\"events\").delete().eq(\"id\", id);
