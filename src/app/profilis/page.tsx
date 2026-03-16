@@ -1,41 +1,41 @@
-\"use client\";
+"use client";
 
-import { useRouter } from \"next/navigation\";
-import { useEffect, useMemo, useState } from \"react\";
-import { supabase } from \"@/lib/supabaseClient\";
-import { useAuth } from \"@/lib/authContext\";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/authContext";
 import {
   setBabyInfo,
   setBabyGenderStorage,
   toLocalDateTimeInputValue,
   fromLocalDateTimeInputValue,
-} from \"@/lib/babyStorage\";
-import { Button } from \"@/components/Button\";
+} from "@/lib/babyStorage";
+import { Button } from "@/components/Button";
 
-type EventType = \"feeding\" | \"diaper\" | \"sleep\";
-type FeedingMethod = \"breast\" | \"formula\" | \"pumped\";
-type DiaperKind = \"wet\" | \"dirty\" | \"both\";
+type EventType = "feeding" | "diaper" | "sleep";
+type FeedingMethod = "breast" | "formula" | "pumped";
+type DiaperKind = "wet" | "dirty" | "both";
 
 type FeedingEvent = {
   id: string;
-  type: \"feeding\";
+  type: "feeding";
   time: string;
   feedingMethod: FeedingMethod;
   amountMl?: number;
   durationMinutes?: number;
-  breastSide?: \"left\" | \"right\" | null;
+  breastSide?: "left" | "right" | null;
 };
 
 type DiaperEvent = {
   id: string;
-  type: \"diaper\";
+  type: "diaper";
   time: string;
   diaperKind: DiaperKind;
 };
 
 type SleepEvent = {
   id: string;
-  type: \"sleep\";
+  type: "sleep";
   time: string;
   sleepEnd?: string;
 };
@@ -44,9 +44,9 @@ type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
 
 function formatTimeLabel(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleTimeString(\"lt-LT\", {
-    hour: \"2-digit\",
-    minute: \"2-digit\",
+  return d.toLocaleTimeString("lt-LT", {
+    hour: "2-digit",
+    minute: "2-digit",
     hour12: false,
   });
 }
