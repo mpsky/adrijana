@@ -470,10 +470,15 @@ export default function ProfilisPage() {
       setAmountMl("");
       setDurationMinutes("");
       setSleepEndInput("");
-    } else {
+    } else if (e.type === "sleep") {
       setAmountMl("");
       setDurationMinutes("");
       setSleepEndInput(e.sleepEnd ? toLocalDateTimeInputValue(e.sleepEnd) : "");
+    } else if (e.type === "pumping") {
+      setFeedingMethod("pumped");
+      setAmountMl(e.amountMl ? String(e.amountMl) : "");
+      setDurationMinutes("");
+      setSleepEndInput("");
     }
   }
 
