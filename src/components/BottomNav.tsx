@@ -73,8 +73,7 @@ export function BottomNav() {
             <div className="flex flex-col gap-1.5">
               {quickNavItems.map((item) => {
                 const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/" && pathname.startsWith(item.href));
+                  pathname === item.href || pathname.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}
