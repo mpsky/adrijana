@@ -56,16 +56,16 @@ export default function ProfilisPage() {
   const router = useRouter();
 
   const [babyId, setBabyId] = useState<string | null>(null);
-  const [babyName, setBabyName] = useState(\"\");
-  const [babyBirthInput, setBabyBirthInput] = useState(\"\");
-  const [babyGender, setBabyGender] = useState<string>(\"\");
+  const [babyName, setBabyName] = useState("");
+  const [babyBirthInput, setBabyBirthInput] = useState("");
+  const [babyGender, setBabyGender] = useState<string>("");
   const [isBabyLoading, setIsBabyLoading] = useState(true);
   const [babyError, setBabyError] = useState<string | null>(null);
   const [babySaved, setBabySaved] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [isGeneratingInvite, setIsGeneratingInvite] = useState(false);
   const [inviteHistory, setInviteHistory] = useState<{ id: string; code: string; created_at: string; used_by: string | null }[]>([]);
-  const [acceptCodeInput, setAcceptCodeInput] = useState(\"\");
+  const [acceptCodeInput, setAcceptCodeInput] = useState("");
   const [acceptInviteError, setAcceptInviteError] = useState<string | null>(null);
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false);
   const [acceptSuccess, setAcceptSuccess] = useState(false);
@@ -75,13 +75,14 @@ export default function ProfilisPage() {
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsSaving, setEventsSaving] = useState(false);
   const [eventsError, setEventsError] = useState<string | null>(null);
-  const [eventType, setEventType] = useState<EventType>(\"feeding\");
-  const [feedingMethod, setFeedingMethod] = useState<FeedingMethod>(\"formula\");
-  const [diaperKind, setDiaperKind] = useState<DiaperKind>(\"wet\");
-  const [timeInput, setTimeInput] = useState(\"\");
-  const [sleepEndInput, setSleepEndInput] = useState(\"\");
-  const [amountMl, setAmountMl] = useState(\"\");
-  const [durationMinutes, setDurationMinutes] = useState(\"\");
+  const [eventType, setEventType] = useState<EventType>("feeding");
+  const [feedingMethod, setFeedingMethod] =
+    useState<FeedingMethod>("formula");
+  const [diaperKind, setDiaperKind] = useState<DiaperKind>("wet");
+  const [timeInput, setTimeInput] = useState("");
+  const [sleepEndInput, setSleepEndInput] = useState("");
+  const [amountMl, setAmountMl] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState("");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   useEffect(() => {
