@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/authContext";
 
 type FeedingMethod = "breast" | "formula" | "pumped";
 type DiaperKind = "wet" | "dirty" | "both";
@@ -14,6 +16,7 @@ type FeedingEvent = {
   feedingMethod: FeedingMethod;
   amountMl?: number;
   durationMinutes?: number;
+  breastSide?: "left" | "right" | null;
 };
 
 type DiaperEvent = {
@@ -44,10 +47,37 @@ function formatTimeLabel(iso: string) {
 }
 
 export default function ArchivePage() {
+  const { user } = useAuth();
   const [events, setEvents] = useState<BabyEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasBaby, setHasBaby] = useState<boolean | null>(null);
 
   useEffect(() => {
+    if (!user) {
+      setHasBaby(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: member } = await supabase
+        .from("baby_members")
+        .select("baby_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      setHasBaby(!!member?.baby_id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !hasBaby) {
+      setIsLoading(false);
+      return;
+    }
     async function loadArchive() {
       setIsLoading(true);
       const { data, error } = await supabase
@@ -58,7 +88,7 @@ export default function ArchivePage() {
       if (!error && data) {
         const mapped: BabyEvent[] = (data as any[]).map((row) => {
           if (row.type === "feeding") {
-            const feeding: FeedingEvent = {
+            return {
               id: row.id,
               type: "feeding",
               time: row.time,
@@ -66,38 +96,35 @@ export default function ArchivePage() {
               feedingMethod: row.feeding_method,
               amountMl: row.amount_ml ?? undefined,
               durationMinutes: row.duration_minutes ?? undefined,
+              breastSide:
+                row.breast_side === "left" || row.breast_side === "right"
+                  ? row.breast_side
+                  : null,
             };
-            return feeding;
           }
-
           if (row.type === "diaper") {
-            const diaper: DiaperEvent = {
+            return {
               id: row.id,
               type: "diaper",
               time: row.time,
               notes: row.notes ?? undefined,
               diaperKind: row.diaper_kind,
             };
-            return diaper;
           }
-
-          const sleep: SleepEvent = {
+          return {
             id: row.id,
             type: "sleep",
             time: row.time,
             notes: row.notes ?? undefined,
             sleepEnd: row.sleep_end ?? undefined,
           };
-          return sleep;
         });
         setEvents(mapped);
       }
-
       setIsLoading(false);
     }
-
     loadArchive();
-  }, []);
+  }, [user, hasBaby]);
 
   const archiveByDay = useMemo(() => {
     const groups: Record<string, BabyEvent[]> = {};
@@ -112,24 +139,35 @@ export default function ArchivePage() {
     );
   }, [events]);
 
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-sm text-slate-500">Kraunama...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-4 px-4 py-6 sm:px-6 sm:py-8">
-        <header className="flex items-center justify-between gap-2">
-          <h1 className="text-lg font-semibold tracking-tight text-slate-800">
-            Archyvas
-          </h1>
-          <a
-            href="/"
-            className="text-xs font-medium text-sky-700 underline-offset-2 hover:underline"
-          >
-            Atgal į pagrindinį
-          </a>
-        </header>
+      <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
+        <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-lg font-semibold tracking-tight text-slate-800 sm:text-xl">
+              Archyvas
+            </h1>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 sm:px-3"
+            >
+              ← Pagrindinis
+            </Link>
+          </div>
+        </section>
 
+        {/* Visi įrašai pagal dienas */}
         <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="flex items-baseline justify-between gap-2">
-            <p className="text-sm font-semibold tracking-wide text-slate-700">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Visi įrašai pagal dienas
             </p>
             {isLoading && (
@@ -140,99 +178,99 @@ export default function ArchivePage() {
             )}
           </div>
 
-          <div className="mt-3 max-h-[70vh] space-y-3 overflow-y-auto pr-1 text-base sm:text-sm">
-            {archiveByDay.length === 0 ? (
-              <p className="text-slate-500">
+          <div className="mt-4 max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+            {archiveByDay.length === 0 && !isLoading ? (
+              <p className="text-sm text-slate-500">
                 Įrašų dar nėra – pradėk nuo pirmojo maitinimo, sauskelnių
                 keitimo ar miego.
               </p>
             ) : (
               archiveByDay.map(([date, dayEvents]) => (
-                <div key={date} className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                <div key={date} className="space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                     <span className="h-px w-4 rounded-full bg-slate-200" />
-                    <span>
-                      {new Date(date).toLocaleDateString("lt-LT", {
-                        year: "numeric",
-                        month: "short",
-                        day: "2-digit",
-                      })}
-                    </span>
+                    {new Date(date).toLocaleDateString("lt-LT", {
+                      year: "numeric",
+                      month: "short",
+                      day: "2-digit",
+                    })}
                   </div>
-                  <div className="space-y-1.5">
-                    {dayEvents.map((e) => (
-                      <div
-                        key={e.id}
-                        className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2 text-xs shadow-sm"
-                      >
-                        <div className="space-y-0.5">
-                          <p className="text-[11px] font-medium text-slate-800">
-                            <span className="font-mono">
-                              {formatTimeLabel(e.time)}
-                            </span>
-                            {" | "}
-                            <span>
-                              {e.type === "feeding"
-                                ? "Maitinimas"
-                                : e.type === "diaper"
-                                ? "Sauskelnių keitimas"
-                                : "Miegas"}
-                            </span>
-                            {" | "}
-                            <span>
-                              {e.type === "feeding"
-                                ? e.feedingMethod === "breast"
-                                  ? "Krūtimi"
-                                  : e.feedingMethod === "pumped"
-                                  ? `Mamos pienas${
-                                      e.amountMl ? ` ${e.amountMl} ml` : ""
-                                    }`
-                                  : `Mišinėlis${
-                                      e.amountMl &&
-                                      e.feedingMethod === "formula"
-                                        ? ` ${e.amountMl} ml`
-                                        : ""
-                                    }`
-                                : e.type === "diaper"
-                                ? e.diaperKind === "wet"
-                                  ? "Šlapias"
-                                  : e.diaperKind === "dirty"
-                                  ? "Purvinas"
-                                  : "Šlapias ir purvinas"
-                                : e.sleepEnd
-                                ? `nuo ${formatTimeLabel(
-                                    e.time
-                                  )} iki ${formatTimeLabel(e.sleepEnd)}`
-                                : `nuo ${formatTimeLabel(e.time)} (vyksta)`}
-                            </span>
-                            {e.type === "feeding" &&
-                              e.feedingMethod === "breast" &&
-                              e.durationMinutes != null && (
+                  <div className="space-y-2">
+                    {dayEvents
+                      .slice()
+                      .sort(
+                        (a, b) =>
+                          new Date(a.time).getTime() - new Date(b.time).getTime()
+                      )
+                      .map((e) => (
+                        <div
+                          key={e.id}
+                          className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-sm shadow-sm"
+                        >
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-slate-800">
+                              <span className="font-mono">
+                                {formatTimeLabel(e.time)}
+                              </span>
+                              {" | "}
+                              <span>
+                                {e.type === "feeding"
+                                  ? "Maitinimas"
+                                  : e.type === "diaper"
+                                  ? "Sauskelnių keitimas"
+                                  : "Miegas"}
+                              </span>
+                              {" | "}
+                              <span>
+                                {e.type === "feeding"
+                                  ? e.feedingMethod === "breast"
+                                    ? `Krūtimi${
+                                        (e as FeedingEvent).breastSide ===
+                                        "left"
+                                          ? " (kairė)"
+                                          : (e as FeedingEvent).breastSide ===
+                                            "right"
+                                          ? " (dešinė)"
+                                          : ""
+                                      }`
+                                    : e.feedingMethod === "pumped"
+                                    ? `Nutrauktas${e.amountMl ? ` ${e.amountMl} ml` : ""}`
+                                    : `Mišinėlis${e.amountMl && e.feedingMethod === "formula" ? ` ${e.amountMl} ml` : ""}`
+                                  : e.type === "diaper"
+                                  ? e.diaperKind === "wet"
+                                    ? "Šlapias"
+                                    : e.diaperKind === "dirty"
+                                    ? "Purvinas"
+                                    : "Šlapias ir purvinas"
+                                  : e.sleepEnd
+                                  ? `nuo ${formatTimeLabel(e.time)} iki ${formatTimeLabel(e.sleepEnd)}`
+                                  : `nuo ${formatTimeLabel(e.time)} (vyksta)`}
+                              </span>
+                              {e.type === "feeding" &&
+                                e.feedingMethod === "breast" &&
+                                e.durationMinutes != null && (
+                                  <> {" | "} <span>{e.durationMinutes} min</span></>
+                                )}
+                              {e.type === "sleep" && e.sleepEnd && (
                                 <>
                                   {" | "}
-                                  <span>{e.durationMinutes} min</span>
+                                  <span>
+                                    {Math.max(
+                                      0,
+                                      Math.round(
+                                        (new Date(e.sleepEnd).getTime() -
+                                          new Date(e.time).getTime()) /
+                                          60000
+                                      )
+                                    )}{" "}
+                                    min
+                                  </span>
                                 </>
                               )}
-                            {e.type === "sleep" && e.sleepEnd && (
-                              <>
-                                {" | "}
-                                <span>
-                                  {Math.max(
-                                    0,
-                                    Math.round(
-                                      (new Date(e.sleepEnd).getTime() -
-                                        new Date(e.time).getTime()) /
-                                        60000
-                                    )
-                                  )}{" "}
-                                  min
-                                </span>
-                              </>
-                            )}
-                          </p>
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 </div>
               ))

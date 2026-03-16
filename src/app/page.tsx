@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { getBabyInfo, setBabyInfo } from "@/lib/babyStorage";
 import { Button } from "@/components/Button";
 
-type EventType = "feeding" | "diaper" | "sleep";
+type EventType = "feeding" | "diaper" | "sleep" | "pumping";
 
 type FeedingMethod = "breast" | "formula" | "pumped";
 
@@ -20,6 +21,7 @@ type FeedingEvent = {
   feedingMethod: FeedingMethod;
   amountMl?: number;
   durationMinutes?: number;
+  breastSide?: "left" | "right" | null;
 };
 
 type DiaperEvent = {
@@ -38,7 +40,15 @@ type SleepEvent = {
   sleepEnd?: string;
 };
 
-type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent;
+type PumpingEvent = {
+  id: string;
+  type: "pumping";
+  time: string;
+  notes?: string;
+  amountMl?: number;
+};
+
+type BabyEvent = FeedingEvent | DiaperEvent | SleepEvent | PumpingEvent;
 
 function formatTimeLabel(iso: string) {
   const d = new Date(iso);
@@ -59,6 +69,26 @@ function isToday(iso: string) {
   );
 }
 
+function formatAgo(fromIso: string, now: Date) {
+  const t = new Date(fromIso).getTime();
+  if (Number.isNaN(t)) return "";
+  const diffMs = now.getTime() - t;
+  if (diffMs <= 0) return "dabar";
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours - days * 24;
+  const minutes = totalMinutes - totalHours * 60;
+
+  if (days > 0) {
+    return `prieš ${days} d.`;
+  }
+  if (totalHours > 0) {
+    return `prieš ${totalHours} val.${minutes > 0 ? ` ${minutes} min.` : ""}`;
+  }
+  return `prieš ${Math.max(1, totalMinutes)} min.`;
+}
+
 export default function Home() {
   const { user } = useAuth();
   const [events, setEvents] = useState<BabyEvent[]>([]);
@@ -75,12 +105,15 @@ export default function Home() {
 
   const [feedingMethod, setFeedingMethod] = useState<FeedingMethod>("breast");
   const [amountMl, setAmountMl] = useState<string>("");
+  const [breastSide, setBreastSide] = useState<"left" | "right">("left");
   const [durationMinutes, setDurationMinutes] = useState<string>("");
   const [diaperKind, setDiaperKind] = useState<DiaperKind>("wet");
+  const [entryCategory, setEntryCategory] = useState<"feeding" | "diaper" | "sleep" | "pumping">("feeding");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<EventType | null>(null);
 
   const [babyInfo, setBabyInfo] = useState(() => getBabyInfo());
+  const [babyGender, setBabyGender] = useState<"female" | "male" | "">("");
 
   // Patikrinti, ar vartotojas turi kūdikį (narystė baby_members)
   useEffect(() => {
@@ -106,12 +139,18 @@ export default function Home() {
       if (member?.baby_id && typeof window !== "undefined") {
         const { data: babyRow } = await supabase
           .from("babies")
-          .select("name, birth_iso")
+          .select("name, birth_iso, gender")
           .eq("id", member.baby_id)
           .maybeSingle();
         if (cancelled || !babyRow) return;
         const name = (babyRow.name as string) ?? "";
         const birthIso = (babyRow.birth_iso as string) ?? "";
+        const rawGender = (babyRow as { gender?: string | null }).gender;
+        const genderNorm =
+          typeof rawGender === "string" ? rawGender.trim().toLowerCase() : "";
+        const gender =
+          genderNorm === "female" || genderNorm === "male" ? genderNorm : "";
+        setBabyGender(gender);
         if (birthIso) setBabyInfo({ name, birthIso });
         window.localStorage.setItem("baby-diary-unlocked-v1", "true");
       } else if (typeof window !== "undefined") {
@@ -147,6 +186,10 @@ export default function Home() {
               feedingMethod: row.feeding_method,
               amountMl: row.amount_ml ?? undefined,
               durationMinutes: row.duration_minutes ?? undefined,
+              breastSide:
+                row.breast_side === "left" || row.breast_side === "right"
+                  ? row.breast_side
+                  : null,
             };
             return feeding;
           }
@@ -160,6 +203,17 @@ export default function Home() {
               diaperKind: row.diaper_kind,
             };
             return diaper;
+          }
+
+          if (row.type === "pumping") {
+            const pumping: PumpingEvent = {
+              id: row.id,
+              type: "pumping",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              amountMl: row.amount_ml ?? undefined,
+            };
+            return pumping;
           }
 
           const sleep: SleepEvent = {
@@ -205,6 +259,14 @@ export default function Home() {
               time: row.time,
               notes: row.notes ?? undefined,
               diaperKind: row.diaper_kind,
+            };
+          } else if (row.type === "pumping") {
+            mapped = {
+              id: row.id,
+              type: "pumping",
+              time: row.time,
+              notes: row.notes ?? undefined,
+              amountMl: row.amount_ml ?? undefined,
             };
           } else {
             mapped = {
@@ -304,7 +366,11 @@ export default function Home() {
 
     for (const e of events) {
       if (e.type === "feeding") {
-        base.totalFeedings += 1;
+        const isRealFeeding =
+          e.feedingMethod === "breast" || e.feedingMethod === "formula";
+        if (isRealFeeding) {
+          base.totalFeedings += 1;
+        }
 
         if (typeof e.amountMl === "number") {
           if (e.feedingMethod === "formula") {
@@ -312,7 +378,6 @@ export default function Home() {
             base.totalFeedingsAmount += e.amountMl;
           } else if (e.feedingMethod === "pumped") {
             base.totalPumpedAmount += e.amountMl;
-            base.totalFeedingsAmount += e.amountMl;
           }
         }
         if (
@@ -323,7 +388,9 @@ export default function Home() {
         }
 
         if (isToday(e.time)) {
-          base.todayFeedings += 1;
+          if (isRealFeeding) {
+            base.todayFeedings += 1;
+          }
 
           if (typeof e.amountMl === "number") {
             if (e.feedingMethod === "formula") {
@@ -331,7 +398,6 @@ export default function Home() {
               base.todayFeedingsAmount += e.amountMl;
             } else if (e.feedingMethod === "pumped") {
               base.todayPumpedAmount += e.amountMl;
-              base.todayFeedingsAmount += e.amountMl;
             }
           }
           if (
@@ -361,18 +427,130 @@ export default function Home() {
         if (isToday(e.time)) {
           base.todaySleepMinutes += minutes;
         }
+      } else if (e.type === "pumping") {
+        if (typeof e.amountMl === "number") {
+          base.totalPumpedAmount += e.amountMl;
+          if (isToday(e.time)) {
+            base.todayPumpedAmount += e.amountMl;
+          }
+        }
       }
     }
 
     return base;
   }, [events]);
 
+  const todaySleepHoursLabel = useMemo(() => {
+    const minutes = stats.todaySleepMinutes;
+    if (!minutes) return "0 val.";
+    const hours = minutes / 60;
+    if (hours < 1) {
+      return `${minutes} min`;
+    }
+    return `${hours.toFixed(1)} val.`;
+  }, [stats.todaySleepMinutes]);
+
   const [now, setNow] = useState<Date>(new Date());
+  const [show3hInfo, setShow3hInfo] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1_000);
     return () => clearInterval(id);
   }, []);
+
+  const lastFeedingEvent = useMemo(
+    () =>
+      [...events]
+        .filter((e) => e.type === "feeding")
+        .sort(
+          (a, b) =>
+            new Date(b.time).getTime() - new Date(a.time).getTime()
+        )[0] as FeedingEvent | undefined,
+    [events]
+  );
+
+  const lastDiaperEvent = useMemo(
+    () =>
+      [...events]
+        .filter((e) => e.type === "diaper")
+        .sort(
+          (a, b) =>
+            new Date(b.time).getTime() - new Date(a.time).getTime()
+        )[0] as DiaperEvent | undefined,
+    [events]
+  );
+
+  const lastFinishedSleep = useMemo(
+    () =>
+      [...events]
+        .filter(
+          (e) => e.type === "sleep" && (e as SleepEvent).sleepEnd
+        )
+        .sort(
+          (a, b) =>
+            new Date((b as SleepEvent).sleepEnd as string).getTime() -
+            new Date((a as SleepEvent).sleepEnd as string).getTime()
+        )[0] as SleepEvent | undefined,
+    [events]
+  );
+
+  const lastFeedingLabel = useMemo(() => {
+    if (!lastFeedingEvent) return "Dar nėra maitinimų.";
+    const ago = formatAgo(lastFeedingEvent.time, now);
+    const typeText =
+      lastFeedingEvent.feedingMethod === "breast"
+        ? "krūtimi"
+        : lastFeedingEvent.feedingMethod === "formula"
+        ? "mišinėlis"
+        : "nutrauktas";
+    return `${ago} • ${typeText}`;
+  }, [lastFeedingEvent, now]);
+
+  const lastDiaperLabel = useMemo(() => {
+    if (!lastDiaperEvent) return "Dar nėra sauskelnių keitimų.";
+    const ago = formatAgo(lastDiaperEvent.time, now);
+    let kind = "";
+    if (lastDiaperEvent.diaperKind === "wet") kind = "šlapias";
+    else if (lastDiaperEvent.diaperKind === "dirty") kind = "purvinas";
+    else kind = "šlapias ir purvinas";
+    return `${ago} • ${kind}`;
+  }, [lastDiaperEvent, now]);
+
+  const lastSleepLabel = useMemo(() => {
+    if (!lastFinishedSleep) return "Dar nėra užfiksuoto miego.";
+    const endIso = lastFinishedSleep.sleepEnd as string;
+    const ago = formatAgo(endIso, now);
+    const startMs = new Date(lastFinishedSleep.time).getTime();
+    const endMs = new Date(endIso).getTime();
+    const minutes = Math.max(0, Math.round((endMs - startMs) / 60000));
+    return `${ago} • ${minutes} min.`;
+  }, [lastFinishedSleep, now]);
+
+  const threeHourLimitInfo = useMemo(() => {
+    const birth = new Date(babyInfo.birthIso);
+    if (Number.isNaN(birth.getTime())) {
+      return { limit: 100, index: -1 };
+    }
+    const diffDays = Math.max(
+      0,
+      Math.floor((now.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24))
+    );
+    // Amžiaus intervalai pagal pateiktą lentelę
+    // 0: 1 diena, 1: 3 diena, 2: 8–10 diena, 3: 1 sav.–1 mėn.,
+    // 4: 1–3 mėn., 5: 3–6 mėn., 6: 6–9 mėn., 7: 9–12 mėn.
+    let index = 0;
+    if (diffDays <= 1) index = 0;
+    else if (diffDays <= 3) index = 1;
+    else if (diffDays <= 10) index = 2;
+    else if (diffDays <= 30) index = 3;
+    else if (diffDays <= 90) index = 4;
+    else if (diffDays <= 180) index = 5;
+    else if (diffDays <= 270) index = 6;
+    else index = 7;
+
+    const limits = [15, 30, 60, 120, 180, 210, 240, 240];
+    return { limit: limits[index] ?? 100, index };
+  }, [babyInfo.birthIso, now]);
 
   const feedingGuidance = useMemo(() => {
     const nowMs = now.getTime();
@@ -403,7 +581,7 @@ export default function Home() {
       }
     }
 
-    const limit3h = 100;
+    const limit3h = threeHourLimitInfo.limit;
     const limit24h = 560;
 
     const remaining3h = Math.max(0, limit3h - last3hFormulaMl);
@@ -434,7 +612,7 @@ export default function Home() {
       limit3h,
       limit24h,
     };
-  }, [events, now]);
+  }, [events, now, threeHourLimitInfo.limit]);
 
   const babyAgeLabel = useMemo(() => {
     const birth = new Date(babyInfo.birthIso);
@@ -615,6 +793,7 @@ export default function Home() {
             amount_ml: null,
             duration_minutes: null,
             diaper_kind: null,
+            breast_side: breastSide,
           };
 
           const { data, error } = await supabase
@@ -733,7 +912,7 @@ export default function Home() {
           }
         }
       }
-    } else {
+    } else if (targetType === "diaper") {
       const payload = {
         user_id: user?.id,
         baby_id: currentBabyId ?? undefined,
@@ -790,6 +969,35 @@ export default function Home() {
           };
           setEvents((prev) => [newEvent, ...prev]);
         }
+      }
+    } else if (targetType === "pumping") {
+      const payload = {
+        user_id: user?.id,
+        baby_id: currentBabyId ?? undefined,
+        type: "pumping",
+        time: nowIso,
+        notes: null,
+        diaper_kind: null,
+        feeding_method: null,
+        amount_ml: amountMl ? Number(amountMl) || null : null,
+        duration_minutes: null,
+      };
+
+      const { data, error } = await supabase
+        .from("events")
+        .insert(payload)
+        .select("*")
+        .single();
+
+      if (!error && data) {
+        const newEvent: PumpingEvent = {
+          id: data.id,
+          type: "pumping",
+          time: data.time,
+          notes: data.notes ?? undefined,
+          amountMl: data.amount_ml ?? undefined,
+        };
+        setEvents((prev) => [newEvent, ...prev]);
       }
     }
 
@@ -952,325 +1160,230 @@ export default function Home() {
       )}
       {showDiary && (
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
-        <section className="rounded-3xl bg-white/95 p-4 shadow-sm ring-1 ring-slate-100 backdrop-blur sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Mobile: gimimo data ir amžius – viena eilutė, be žodžių */}
-            <div className="block w-full sm:hidden">
-              <div className="flex w-full items-center gap-2 rounded-2xl bg-sky-50 px-3 py-1.5 text-[10px] text-slate-700 ring-1 ring-sky-100">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-100 text-sky-700 shrink-0">
+        {/* Šiandien – santrauka + paskutiniai įrašai */}
+        <section className="space-y-3">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-sky-100 via-rose-100 to-indigo-100 p-[1px] shadow-sm">
+            <div className="relative rounded-[1.35rem] bg-white px-4 py-4 text-xs text-slate-800 sm:px-5 sm:py-5">
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      aria-hidden="true"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                    >
+                      <rect x="3" y="4" width="18" height="15" rx="4" />
+                      <path d="M8 9h8" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                      Šiandien
+                    </p>
+                  </div>
+                </div>
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-0.5 text-[11px] font-medium text-sky-700 ring-1 ring-sky-200">
                   <svg
                     viewBox="0 0 24 24"
-                    className="h-3 w-3"
+                    className="h-7 w-7"
                     aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
                   >
-                    <path
-                      d="M7 4.5A2.5 2.5 0 0 1 9.5 2h5A2.5 2.5 0 0 1 17 4.5V6h1.5A1.5 1.5 0 0 1 20 7.5v11A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H7Z"
-                      fill="currentColor"
-                    />
-                    <path
-                      d="M9 3.5h6M8 10h8"
-                      stroke="#e5e7eb"
-                      strokeWidth="1.2"
-                      strokeLinecap="round"
-                    />
+                    <circle cx="12" cy="12" r="8" />
+                    <path d="M12 8v4l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                </span>
-                <span className="flex-1 truncate">
-                  <span>{babyBirthDisplay}</span>
-                  <span className="mx-1.5">•</span>
-                  <span>{babyAgeLabel}</span>
-                </span>
-              </div>
-            </div>
-
-            {/* Desktop: atskiros gimimo datos ir amžiaus kapsulės */}
-            <div className="hidden flex-wrap items-center gap-2 text-xs sm:flex sm:text-sm">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1 text-slate-600 ring-1 ring-slate-100">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-3.5 w-3.5"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M7 4.5A2.5 2.5 0 0 1 9.5 2h5A2.5 2.5 0 0 1 17 4.5V6h1.5A1.5 1.5 0 0 1 20 7.5v11A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H7Z"
-                    fill="currentColor"
-                    opacity="0.9"
-                  />
-                  <path
-                    d="M9 3.5h6M8 10h8"
-                    stroke="#e5e7eb"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span>gim. {babyBirthDisplay}</span>
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-indigo-700 ring-1 ring-indigo-100">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-3.5 w-3.5"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M12 4a8 8 0 1 1-8 8"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M12 4v5.5l3 2"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span>amžius {babyAgeLabel}</span>
-              </span>
-            </div>
-
-            {isLoading && (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
-                  Kraunami įrašai...
+                  <span>
+                    Dabar{" "}
+                    {now.toLocaleTimeString("lt-LT", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
                 </span>
               </div>
-            )}
-          </div>
-        </section>
 
-        <section className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {/* Šiandien – maitinimas ir miegas */}
-            <div className="rounded-2xl bg-white/90 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-sky-600 ring-1 ring-sky-100">
-                  <svg viewBox="0 0 64 64" className="h-5 w-5" aria-hidden="true" fill="currentColor">
-                    <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Šiandien – maitinimas
-                  </p>
-                  <p className="text-2xl font-semibold text-slate-900">
-                    {stats.todayFeedings}
-                    <span className="ml-1 text-xs font-normal text-slate-500">
-                      kartai
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-                <p className="flex items-center justify-between">
-                  <span>Mišinėlis</span>
-                  <span className="font-semibold text-sky-700">
+              {/* Today summary */}
+              <dl className="mt-3 space-y-1.5 text-xs text-slate-600">
+                <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-3 py-2 ring-1 ring-sky-100">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Mišinėlis
+                  </dt>
+                  <dd className="text-right text-[11px] font-semibold text-sky-700">
                     {stats.todayFormulaAmount} ml
-                  </span>
-                </p>
-                <p className="flex items-center justify-between">
-                  <span>Mamos pienas</span>
-                  <span className="font-semibold text-rose-700">
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl bg-rose-50 px-3 py-2 ring-1 ring-rose-100">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Nutrauktas
+                  </dt>
+                  <dd className="text-right text-[11px] font-semibold text-rose-700">
                     {stats.todayPumpedAmount} ml
-                  </span>
-                </p>
-                <p className="flex items-center justify-between">
-                  <span>Krūtimi</span>
-                  <span className="font-semibold text-sky-700">
-                    {stats.todayBreastMinutes} min
-                  </span>
-                </p>
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                  {(() => {
-                    const max =
-                      Math.max(
-                        stats.todayFormulaAmount,
-                        stats.todayPumpedAmount,
-                        stats.todayBreastMinutes
-                      ) || 1;
-                    const formulaWidth =
-                      (stats.todayFormulaAmount / max) * 100 || 0;
-                    const pumpedWidth =
-                      (stats.todayPumpedAmount / max) * 100 || 0;
-                    const breastWidth =
-                      (stats.todayBreastMinutes / max) * 100 || 0;
-                    return (
-                      <div className="flex h-full w-full">
-                        <div
-                          className="h-full bg-sky-400 transition-[width]"
-                          style={{ width: `${formulaWidth}%` }}
-                        />
-                        <div
-                          className="h-full bg-rose-300 transition-[width]"
-                          style={{ width: `${pumpedWidth}%` }}
-                        />
-                        <div
-                          className="h-full bg-sky-200 transition-[width]"
-                          style={{ width: `${breastWidth}%` }}
-                        />
-                      </div>
-                    );
-                  })()}
+                  </dd>
                 </div>
-              </div>
-            </div>
-
-            {/* Šiandien – sauskelnės */}
-            <div className="rounded-2xl bg-white/90 p-4 shadow-sm ring-1 ring-emerald-100 backdrop-blur">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100">
-                  <svg viewBox="0 0 64 64" className="h-5 w-5" aria-hidden="true" fill="currentColor">
-                    <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
-                  </svg>
+                <div className="flex items-center justify-between rounded-2xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Sauskelnės
+                  </dt>
+                  <dd className="text-right text-[11px] font-semibold text-emerald-700">
+                    {stats.todayDiapers} kartai
+                  </dd>
                 </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Šiandien – sauskelnės
-                  </p>
-                  <p className="text-2xl font-semibold text-slate-900">
-                    {stats.todayDiapers}
-                    <span className="ml-1 text-xs font-normal text-slate-500">
-                      kartai
-                    </span>
-                  </p>
-                </div>
-              </div>
-              <div className="mt-2 space-y-1 text-[11px] text-slate-600">
-                <p className="flex items-center justify-between">
-                  <span>Šlapias</span>
-                  <span className="font-semibold text-emerald-700">
-                    {stats.todayWetDiapers}
-                  </span>
-                </p>
-                <p className="flex items-center justify-between">
-                  <span>Purvinas</span>
-                  <span className="font-semibold text-emerald-700">
-                    {stats.todayDirtyDiapers}
-                  </span>
-                </p>
-                <p className="flex items-center justify-between">
-                  <span>Abu</span>
-                  <span className="font-semibold text-emerald-700">
-                    {stats.todayBothDiapers}
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            {/* Viso laikotarpio – santrauka */}
-            <div className="rounded-2xl bg-slate-950 text-slate-50 p-4 shadow-sm ring-1 ring-slate-900/40 backdrop-blur">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-sky-200 ring-1 ring-sky-500/40">
-                  <svg viewBox="0 0 64 64" className="h-5 w-5" aria-hidden="true" fill="currentColor">
-                    <path d="M57.94,15.09,46.31,8.58h0l-.14-.08s0,0-.07,0l-.16-.07L37.44,6h0a1.06,1.06,0,0,0-.31,0h-.14a1,1,0,0,0-.37.17h0a7.44,7.44,0,0,1-9.12,0h0A1,1,0,0,0,27.06,6h-.14a1.08,1.08,0,0,0-.31,0h-.05L18.07,8.4h0a.85.85,0,0,0-.22.09L6.06,15.09a1,1,0,0,0-.39,1.35l5.19,9.44a1,1,0,0,0,1,.51L16.66,26c-.78,6.1-1.16,26.13-1.21,28.6a1,1,0,0,0,.79,1L27.09,58a1,1,0,0,0,1.13-.58L32,48.71l3.78,8.69a1,1,0,0,0,.92.6l.21,0,10.85-2.36a1,1,0,0,0,.79-1c0-2.47-.43-22.5-1.21-28.6l4.85.37a1,1,0,0,0,1-.51l5.19-9.44A1,1,0,0,0,57.94,15.09ZM36.41,8.65c.13,1.43.11,3.63-1,5A4.06,4.06,0,0,1,32,15.05a4.06,4.06,0,0,1-3.41-1.37c-1.11-1.4-1.13-3.6-1-5A9.43,9.43,0,0,0,36.41,8.65ZM12.3,24.35l-4.4-8,10.16-5.69c3.85,5.65.29,11.77-.74,13.3Zm25,31.5L32.92,45.8a1,1,0,0,0-1.84,0L26.71,55.85l-9.24-2c.15-7.72.63-25.52,1.33-28.49a18.37,18.37,0,0,0,2.44-5.22A12.32,12.32,0,0,0,20,9.94l5.63-1.56c-.17,1.75-.15,4.57,1.41,6.53A5.62,5.62,0,0,0,31,17v9.48H28.74a1,1,0,1,0,0,2H32a1,1,0,0,0,1-1V17a5.62,5.62,0,0,0,4-2.08c1.56-2,1.58-4.78,1.41-6.53L44.05,10a12.29,12.29,0,0,0-1.26,10.18,17.82,17.82,0,0,0,2.4,5.15c.71,2.78,1.19,20.78,1.34,28.56ZM51.7,24.35l-5-.38c-1-1.53-4.54-7.7-.75-13.3L56.1,16.35Z" />
-                    <path d="M35.19,18.89a.87.87,0,1,0,.87.86A.87.87,0,0,0,35.19,18.89Z" />
-                    <path d="M35.19,23.46a.87.87,0,1,0,.87.86A.86.86,0,0,0,35.19,23.46Z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">
-                    Nuo pradžios
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Bendra maitinimo ir miego istorija
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-1 gap-y-1.5 text-xs sm:grid-cols-2 sm:gap-x-6">
-                <p className="flex items-center justify-between gap-3 text-slate-300">
-                  <span className="truncate">Maitinimai</span>
-                  <span className="shrink-0 font-semibold text-sky-200">
-                    {stats.totalFeedings}
-                  </span>
-                </p>
-                <p className="flex items-center justify-between gap-3 text-slate-300">
-                  <span className="truncate">Sauskelnių</span>
-                  <span className="shrink-0 font-semibold text-emerald-200">
-                    {stats.totalDiapers}
-                  </span>
-                </p>
-                <p className="flex items-center justify-between gap-3 text-slate-300">
-                  <span className="truncate">Mišinėlis</span>
-                  <span className="shrink-0 font-semibold text-sky-200">
-                    {stats.totalFormulaAmount} ml
-                  </span>
-                </p>
-                <p className="flex items-center justify-between gap-3 text-slate-300">
-                  <span className="truncate">Mamos pienas</span>
-                  <span className="shrink-0 font-semibold text-sky-200">
-                    {stats.totalPumpedAmount} ml
-                  </span>
-                </p>
-                <p className="flex items-center justify-between gap-3 text-slate-300">
-                  <span className="truncate">Krūtimi</span>
-                  <span className="shrink-0 font-semibold text-sky-200">
-                    {stats.totalBreastMinutes} min
-                  </span>
-                </p>
-                <p className="flex items-center justify-between gap-3 text-slate-300 sm:col-span-2">
-                  <span className="truncate">Bendras miegas</span>
-                  <span className="shrink-0 font-semibold text-sky-200">
-                    {stats.totalSleepMinutes} min
-                  </span>
-                </p>
-              </div>
-
-              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-slate-900">
-                {(() => {
-                  const max =
-                    Math.max(
-                      stats.totalFeedings,
-                      stats.totalDiapers,
-                      Math.round(stats.totalSleepMinutes / 60)
-                    ) || 1;
-                  const feedWidth = (stats.totalFeedings / max) * 100 || 0;
-                  const diaperWidth = (stats.totalDiapers / max) * 100 || 0;
-                  const sleepWidth =
-                    ((stats.totalSleepMinutes / 60) / max) * 100 || 0;
-                  return (
-                    <div className="flex h-full w-full">
-                      <div
-                        className="h-full bg-sky-400 transition-[width]"
-                        style={{ width: `${feedWidth}%` }}
-                      />
-                      <div
-                        className="h-full bg-emerald-400 transition-[width]"
-                        style={{ width: `${diaperWidth}%` }}
-                      />
-                      <div
-                        className="h-full bg-indigo-400 transition-[width]"
-                        style={{ width: `${sleepWidth}%` }}
-                      />
+                <div className="flex items-center justify-between rounded-2xl bg-emerald-50/60 px-3 py-1.5 text-[11px] ring-1 ring-emerald-100/70">
+                  <div className="flex flex-1 items-stretch justify-between gap-4">
+                    <div className="flex flex-1 items-baseline gap-1">
+                      <span className="font-medium text-slate-600">
+                        Šlapios
+                      </span>
+                      <span className="font-semibold text-emerald-800">
+                        {stats.todayWetDiapers}
+                      </span>
                     </div>
-                  );
-                })()}
-              </div>
+                    <div className="flex flex-1 items-baseline gap-1 border-l border-emerald-200 pl-4">
+                      <span className="font-medium text-slate-600">
+                        Purvinos
+                      </span>
+                      <span className="font-semibold text-emerald-800">
+                        {stats.todayDirtyDiapers}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl bg-purple-50 px-3 py-2 ring-1 ring-purple-100">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Miegas
+                  </dt>
+                  <dd className="text-right text-[11px] font-semibold text-purple-700">
+                    {todaySleepHoursLabel}
+                  </dd>
+                </div>
+              </dl>
+
+              {/* Divider */}
+              <div className="my-3 h-px bg-slate-100" />
+
+              <dl className="space-y-1.5">
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-sky-50 px-3 py-2 ring-1 ring-sky-100">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Maitinimas
+                  </dt>
+                  <dd className="text-right text-[11px] text-slate-600">
+                  {lastFeedingEvent ? (
+                    <>
+                      <span className="font-semibold text-slate-900">
+                        {formatAgo(lastFeedingEvent.time, now)}
+                      </span>
+                      <span className="mx-1 text-slate-500">•</span>
+                      <span>
+                        {lastFeedingEvent.feedingMethod === "breast"
+                          ? "krūtimi"
+                          : lastFeedingEvent.feedingMethod === "formula"
+                          ? "mišinėlis"
+                          : "nutrauktas"}
+                      </span>
+                      {typeof lastFeedingEvent.amountMl === "number" &&
+                        lastFeedingEvent.feedingMethod !== "breast" && (
+                          <>
+                            <span className="mx-1 text-slate-500">•</span>
+                            <span className="font-semibold text-sky-700">
+                              {lastFeedingEvent.amountMl} ml
+                            </span>
+                          </>
+                        )}
+                    </>
+                  ) : (
+                    <span className="text-slate-400">Dar nėra maitinimų.</span>
+                  )}
+                  </dd>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 px-3 py-2 ring-1 ring-emerald-100">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Miegas
+                  </dt>
+                  <dd className="text-right text-[11px] text-slate-600">
+                  {lastFinishedSleep ? (
+                    <span className="font-semibold text-emerald-800">
+                      {lastSleepLabel}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">Dar nėra miego įrašų.</span>
+                  )}
+                  </dd>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-amber-50 px-3 py-2 ring-1 ring-amber-100">
+                  <dt className="text-[11px] font-medium text-slate-700">
+                    Sauskelnės
+                  </dt>
+                  <dd className="text-right text-[11px] text-slate-600">
+                  {lastDiaperEvent ? (
+                    <>
+                      <span className="font-semibold text-slate-50">
+                        {formatAgo(lastDiaperEvent.time, now)}
+                      </span>
+                      <span className="mx-1 text-slate-500">•</span>
+                      <span>
+                        {lastDiaperEvent.diaperKind === "wet"
+                          ? "šlapias"
+                          : lastDiaperEvent.diaperKind === "dirty"
+                          ? "purvinas"
+                          : "šlapias ir purvinas"}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-slate-400">
+                      Dar nėra sauskelnių įrašų.
+                    </span>
+                  )}
+                  </dd>
+                </div>
+              </dl>
             </div>
           </div>
         </section>
 
-        <section className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-2xl bg-sky-50/80 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 17V11" />
-                  <circle cx="12" cy="8" r="1" fill="currentColor" />
-                </svg>
+        <section className="mt-3">
+          <div className="w-full rounded-2xl bg-sky-50/80 p-4 shadow-sm ring-1 ring-sky-100 backdrop-blur">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 17V11" />
+                    <circle cx="12" cy="8" r="1" fill="currentColor" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    Rekomendacija
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  Rekomendacija per 3 val.
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Iki {feedingGuidance.limit3h} ml mišinėlio.
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShow3hInfo((v) => !v)}
+                className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-sky-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-sky-700 shadow-sm transition hover:bg-sky-50 active:scale-95"
+                aria-label="Informacija"
+              >
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-sky-100 text-[11px]">
+                  i
+                </span>
+                <span>Informacija</span>
+              </button>
             </div>
             <dl className="mt-3 space-y-1.5 text-xs text-slate-600">
               <div className="flex items-center justify-between">
@@ -1282,11 +1395,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <dt>Liko iki ribos</dt>
                 <dd className="font-semibold text-emerald-700">
-                  {Math.max(
-                    0,
-                    Math.round(feedingGuidance.remaining3h)
-                  )}{" "}
-                  ml
+                  {Math.max(0, Math.round(feedingGuidance.remaining3h))} ml
                 </dd>
               </div>
               <div className="flex items-center justify-between">
@@ -1301,79 +1410,243 @@ export default function Home() {
                 </dd>
               </div>
             </dl>
-          </div>
-
-          <div className="rounded-2xl bg-amber-50/80 p-4 shadow-sm ring-1 ring-amber-100 backdrop-blur">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <path d="M12 17V11" />
-                  <circle cx="11" cy="9" r="1" fill="currentColor" />
-                  <path d="M2 12C2 7.28595 2 4.92893 3.46447 3.46447C4.92893 2 7.28595 2 12 2C16.714 2 19.0711 2 20.5355 3.46447C22 4.92893 22 7.28595 22 12C22 16.714 22 19.0711 20.5355 20.5355C19.0711 22 16.714 22 12 22C7.28595 22 4.92893 22 3.46447 20.5355C2 19.0711 2 16.714 2 12Z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  Rekomendacija per 24 val.
+            {show3hInfo && (
+              <div className="mt-3 rounded-2xl bg-white/90 p-3 text-[11px] text-slate-600 ring-1 ring-sky-100">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Skrandžio talpa (mišinėlio kiekiai)
                 </p>
-                <p className="text-[11px] text-slate-500">
-                  Apie {feedingGuidance.limit24h} ml mišinėlio per parą.
+                <div className="mt-2 overflow-x-auto">
+                  <table className="min-w-full border-collapse text-[10px]">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left">
+                        <th className="py-1 pr-4 font-medium text-slate-600">
+                          Amžius
+                        </th>
+                        <th className="py-1 font-medium text-slate-600">
+                          Kiekis (ml)
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        className={`border-b border-slate-100 ${
+                          threeHourLimitInfo.index === 0
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }`}
+                      >
+                        <td className="py-1 pr-4">1 diena (24 val.)</td>
+                        <td className="py-1">~15 ml</td>
+                      </tr>
+                      <tr
+                        className={`border-b border-slate-100 ${
+                          threeHourLimitInfo.index === 1
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }`}
+                      >
+                        <td className="py-1 pr-4">3 diena (72 val.)</td>
+                        <td className="py-1">15–30 ml</td>
+                      </tr>
+                      <tr
+                        className={`border-b border-slate-100 ${
+                          threeHourLimitInfo.index === 2
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }`}
+                      >
+                        <td className="py-1 pr-4">
+                          8–10 diena (&lt;2 savaitės)
+                        </td>
+                        <td className="py-1">45–60 ml</td>
+                      </tr>
+                      <tr
+                        className={`border-b border-slate-100 ${
+                          threeHourLimitInfo.index === 3
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }`}
+                      >
+                        <td className="py-1 pr-4">1 savaitė – 1 mėnuo</td>
+                        <td className="py-1">60–120 ml</td>
+                      </tr>
+                      <tr
+                        className={`border-b border-slate-100 ${
+                          threeHourLimitInfo.index === 4
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }`}
+                      >
+                        <td className="py-1 pr-4">1 – 3 mėnesiai</td>
+                        <td className="py-1">120–180 ml</td>
+                      </tr>
+                      <tr
+                        className={`border-b border-slate-100 ${
+                          threeHourLimitInfo.index === 5
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }`}
+                      >
+                        <td className="py-1 pr-4">3 – 6 mėnesiai</td>
+                        <td className="py-1">180–210 ml</td>
+                      </tr>
+                      <tr
+                        className={`border-b border-slate-100 ${
+                          threeHourLimitInfo.index === 6
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }`}
+                      >
+                        <td className="py-1 pr-4">6 – 9 mėnesiai</td>
+                        <td className="py-1">210–240 ml</td>
+                      </tr>
+                      <tr
+                        className={
+                          threeHourLimitInfo.index === 7
+                            ? "bg-sky-50/80 font-semibold"
+                            : ""
+                        }
+                      >
+                        <td className="py-1 pr-4">9 – 12 mėnesių</td>
+                        <td className="py-1">210–240 ml</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="mt-2 text-[9px] text-slate-400">
+                  Remiantis „Stomach Capacity“, Alabama Department of Public
+                  Health (.gov).
                 </p>
               </div>
-            </div>
-            <dl className="mt-3 space-y-1.5 text-xs text-slate-600">
-              <div className="flex items-center justify-between">
-                <dt>Per paskutines 24 val.</dt>
-                <dd className="font-semibold text-sky-700">
-                  {Math.round(feedingGuidance.last24hFormulaMl)} ml
-                </dd>
-              </div>
-              <div className="flex items-center justify-between">
-                <dt>Liko iki ribos</dt>
-                <dd className="font-semibold text-emerald-700">
-                  {Math.max(
-                    0,
-                    Math.round(feedingGuidance.remaining24h)
-                  )}{" "}
-                  ml
-                </dd>
-              </div>
-            </dl>
+            )}
           </div>
         </section>
 
         <section className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-100 backdrop-blur sm:p-5">
           <div className="grid gap-4 lg:grid-cols-[2fr,3fr]">
-            <div className="grid gap-4 sm:grid-cols-3">
-            {/* Maitinimas */}
-            <div className="space-y-3 rounded-2xl border border-rose-100 bg-rose-50/70 p-4 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-700">
-                    <svg viewBox="0 0 64 64" className="h-4 w-4" aria-hidden="true" fill="currentColor">
+            <div className="space-y-4">
+              {/* Kategorijos pasirinkimas */}
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Naujas įrašas
+                </p>
+                <div className="flex items-center gap-2 text-[11px] font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setEntryCategory("feeding")}
+                    className={`flex flex-1 aspect-[2/1] items-center justify-center rounded-2xl transition ${
+                      entryCategory === "feeding"
+                        ? "bg-[#ffd6d6] text-rose-900 shadow-sm"
+                        : "bg-rose-50 text-rose-700 hover:bg-rose-100"
+                    }`}
+                    aria-label="Maitinimas"
+                  >
+                    <svg
+                      viewBox="0 0 64 64"
+                      className="h-7 w-7"
+                      aria-hidden="true"
+                      fill="currentColor"
+                    >
                       <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
                     </svg>
-                  </div>
-                  <div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEntryCategory("diaper")}
+                    className={`flex flex-1 aspect-[2/1] items-center justify-center rounded-2xl transition ${
+                      entryCategory === "diaper"
+                        ? "bg-[#eee2f5] text-purple-900 shadow-sm"
+                        : "bg-purple-50 text-purple-700 hover:bg-purple-100"
+                    }`}
+                    aria-label="Sauskelnės"
+                  >
+                    <svg
+                      viewBox="0 0 64 64"
+                      className="h-7 w-7"
+                      aria-hidden="true"
+                      fill="currentColor"
+                    >
+                      <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEntryCategory("sleep")}
+                    className={`flex flex-1 aspect-[2/1] items-center justify-center rounded-2xl transition ${
+                      entryCategory === "sleep"
+                        ? "bg-[#ffe5bf] text-amber-900 shadow-sm"
+                        : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                    }`}
+                    aria-label="Miegas"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-8 w-8"
+                      aria-hidden="true"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        clipRule="evenodd"
+                        d="M18 2.75C17.5858 2.75 17.25 2.41421 17.25 2C17.25 1.58579 17.5858 1.25 18 1.25H22C22.3034 1.25 22.5768 1.43273 22.6929 1.71299C22.809 1.99324 22.7449 2.31583 22.5304 2.53033L19.8107 5.25H22C22.4142 5.25 22.75 5.58579 22.75 6C22.75 6.41421 22.4142 6.75 22 6.75H18C17.6967 6.75 17.4232 6.56727 17.3071 6.28701C17.191 6.00676 17.2552 5.68417 17.4697 5.46967L20.1894 2.75H18ZM13.5 8.75C13.0858 8.75 12.75 8.41421 12.75 8C12.75 7.58579 13.0858 7.25 13.5 7.25H16.5C16.8034 7.25 17.0768 7.43273 17.1929 7.71299C17.309 7.99324 17.2449 8.31583 17.0304 8.53033L15.3107 10.25H16.5C16.9142 10.25 17.25 10.5858 17.25 11C17.25 11.4142 16.9142 11.75 16.5 11.75H13.5C13.1967 11.75 12.9232 11.5673 12.8071 11.287C12.691 11.0068 12.7552 10.6842 12.9697 10.4697L14.6894 8.75H13.5Z"
+                      />
+                      <path d="M12 22C17.5228 22 22 17.5228 22 12C22 11.5373 21.3065 11.4608 21.0672 11.8568C19.9289 13.7406 17.8615 15 15.5 15C11.9101 15 9 12.0899 9 8.5C9 6.13845 10.2594 4.07105 12.1432 2.93276C12.5392 2.69347 12.4627 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEntryCategory("pumping")}
+                    className={`flex flex-1 aspect-[2/1] items-center justify-center rounded-2xl transition ${
+                      entryCategory === "pumping"
+                        ? "bg-[#fde7ff] text-fuchsia-900 shadow-sm"
+                        : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
+                    }`}
+                    aria-label="Nutraukimas"
+                  >
+                    <svg
+                      viewBox="0 0 512 512"
+                      className="h-7 w-7"
+                      aria-hidden="true"
+                      fill="currentColor"
+                    >
+                      <path d="M288.209,331.768c-13.486,0-25.843-2.991-37.793-5.891c-11.956-2.888-24.313-5.885-37.688-5.885c-10.64,0-20.838,1.883-31.166,5.753l-4.05,1.509V445.54c0,3.696,1.032,7.11,3.08,10.156c1.974,2.907,4.811,5.254,8.003,6.604c2.257,0.948,4.57,1.419,7.068,1.419h120.653c3.704-0.007,7.117-1.046,10.15-3.088c2.914-1.959,5.254-4.805,6.611-8.017c0.941-2.222,1.412-4.597,1.412-7.054V320.324l-8.619,3.565C313.02,329.186,300.697,331.768,288.209,331.768z" />
+                      <path d="M381.115,200.834c0.028-4.888-0.215-21.71-4.458-32.759c-5.303-13.777-19.322-35.134-34.892-47.581c-5.096-4.085-10.911-8.19-17.065-12.538c-7.304-5.157-19.98-14.116-25.255-19.716c0.146-0.235,0.298-0.471,0.443-0.686c4.05-6.265,10.841-16.739,10.841-32.815C310.729,24.563,286.18,0,256.003,0c-30.184,0-54.732,24.563-54.732,54.74c0,16.068,6.791,26.55,10.841,32.815c0.145,0.215,0.298,0.45,0.45,0.686c-5.282,5.593-17.958,14.559-25.262,19.716c-6.148,4.348-11.97,8.453-17.072,12.538c-15.563,12.454-29.588,33.811-34.885,47.581c-4.236,11.049-4.479,27.871-4.458,32.759l0.07,11.603h-0.07v235.719c0,8.626,1.696,16.982,5.061,24.86c4.866,11.402,12.924,21.122,23.295,28.08c10.62,7.13,23.047,10.904,35.93,10.904h121.636c8.674,0,17.1-1.689,25.02-5.026c11.506-4.833,21.295-12.822,28.294-23.123c7.2-10.55,11-22.894,10.994-35.694V212.437h-0.07L381.115,200.834z M155.731,175.905c4.209-10.952,16.151-28.772,28.135-38.367c17.051-13.632,48.163-31.305,51.389-45.269c3.136-13.61-12.15-18.45-12.15-37.529c0-18.18,14.726-32.904,32.898-32.904c18.166,0,32.898,14.725,32.898,32.904c0,19.08-15.293,23.919-12.157,37.529c3.226,13.964,34.338,31.638,51.389,45.269c11.984,9.595,23.926,27.415,28.135,38.367c3.109,8.072,3.012,24.812,3.012,24.812H152.72C152.72,200.717,152.623,183.977,155.731,175.905z M359.653,233.732v16.373v198.051c0,5.753-1.128,11.319-3.364,16.553c-3.233,7.615-8.612,14.094-15.542,18.74c-7.089,4.742-15.376,7.248-23.954,7.255H195.206c-5.788,0-11.402-1.128-16.671-3.343c-7.67-3.213-14.199-8.543-18.879-15.424c-4.784-7.034-7.304-15.259-7.31-23.78V250.105v-16.373v-11.18h0.374h206.56h0.374V233.732z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Turinys pagal pasirinktą kategoriją */}
+              {entryCategory === "feeding" && (
+                <div className="space-y-3 rounded-2xl border border-[#ffd6d6] bg-[#fff0f0] p-4 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#ffd6d6] text-rose-800">
+                      <svg
+                        viewBox="0 0 64 64"
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                        fill="currentColor"
+                      >
+                        <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
+                      </svg>
+                    </div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Maitinimas
                     </p>
-                    <p className="text-[11px] text-slate-500">
-                      Krūtimi arba mišinėliu
-                    </p>
                   </div>
-                </div>
-                <div className="space-y-2">
+
+                  {/* Maitinimo tipas */}
                   <div className="space-y-1">
                     <p className="text-[11px] font-medium text-slate-600">
-                      Maitinimo tipas
+                      Tipas
                     </p>
-                    <div className="flex flex-col gap-1 rounded-2xl bg-rose-50 p-1.5 text-[11px] font-medium">
+                    <div className="flex flex-col gap-1 rounded-2xl bg-[#ffe5e5] p-1.5 text-[11px] font-medium">
                       <button
                         type="button"
                         onClick={() => setFeedingMethod("breast")}
                         className={`rounded-full px-3 py-2 transition ${
                           feedingMethod === "breast"
-                            ? "bg-rose-500 text-white shadow-sm"
+                            ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
                             : "text-rose-900 hover:text-rose-700"
                         }`}
                       >
@@ -1384,7 +1657,7 @@ export default function Home() {
                         onClick={() => setFeedingMethod("formula")}
                         className={`rounded-full px-3 py-2 transition ${
                           feedingMethod === "formula"
-                            ? "bg-rose-500 text-white shadow-sm"
+                            ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
                             : "text-rose-900 hover:text-rose-700"
                         }`}
                       >
@@ -1395,41 +1668,254 @@ export default function Home() {
                         onClick={() => setFeedingMethod("pumped")}
                         className={`rounded-full px-3 py-2 transition ${
                           feedingMethod === "pumped"
-                            ? "bg-rose-500 text-white shadow-sm"
+                            ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
                             : "text-rose-900 hover:text-rose-700"
                         }`}
                       >
-                        Mamos pienas
+                        Nutrauktas
                       </button>
                     </div>
                   </div>
-                <div className="grid gap-2">
-                  {(feedingMethod === "formula" || feedingMethod === "pumped") && (
+
+                  {/* Papildomi laukai pagal tipą */}
+                  {feedingMethod === "breast" && (
                     <div className="space-y-1">
-                      <label className="text-[11px] font-medium text-slate-600">
-                        Kiekis (ml)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={amountMl}
-                        onChange={(e) => setAmountMl(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                        placeholder="pvz. 90"
-                      />
+                      <p className="text-[11px] font-medium text-slate-600">
+                        Krūtis
+                      </p>
+                      <div className="flex w-full items-center gap-2 rounded-full bg-[#ffe5e5] px-1.5 py-1 ring-1 ring-[#ffd6d6]">
+                        <button
+                          type="button"
+                          onClick={() => setBreastSide("left")}
+                          className={`flex-1 rounded-full px-3 py-1.75 text-[11px] font-medium transition active:scale-95 ${
+                            breastSide === "left"
+                              ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
+                              : "bg-transparent text-slate-600 hover:bg-[#ffe5e5]"
+                          }`}
+                        >
+                          Kairė
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBreastSide("right")}
+                          className={`flex-1 rounded-full px-3 py-1.75 text-[11px] font-medium transition active:scale-95 ${
+                            breastSide === "right"
+                              ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
+                              : "bg-transparent text-slate-600 hover:bg-[#ffe5e5]"
+                          }`}
+                        >
+                          Dešinė
+                        </button>
+                      </div>
                     </div>
                   )}
-                  {feedingMethod === "breast" && activeBreastFeeding && (
-                    <div className="space-y-1 text-center">
-                      <div className="mx-auto inline-flex max-w-full items-center gap-3 rounded-2xl bg-rose-50 px-5 py-3.5 text-lg font-semibold text-rose-800 ring-1 ring-rose-200">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-200">
-                          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-700" />
+
+                  <div className="grid gap-2">
+                    {(feedingMethod === "formula" ||
+                      feedingMethod === "pumped") && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600">
+                          Kiekis (ml)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={amountMl}
+                          onChange={(e) => setAmountMl(e.target.value)}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                          placeholder="pvz. 90"
+                        />
+                      </div>
+                    )}
+
+                    {feedingMethod === "breast" && activeBreastFeeding && (
+                      <div className="space-y-1 text-center">
+                        <div className="mx-auto inline-flex max-w-full items-center gap-3 rounded-2xl bg-[#ffe5e5] px-5 py-3.5 text-lg font-semibold text-rose-900 ring-1 ring-[#ffd6d6]">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ffbcbc]">
+                            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-rose-700" />
+                          </span>
+                          <span className="font-mono text-2xl sm:text-3xl">
+                            {(() => {
+                              const diffMs =
+                                now.getTime() -
+                                new Date(activeBreastFeeding.time).getTime();
+                              const totalSeconds = Math.max(
+                                0,
+                                Math.floor(diffMs / 1000)
+                              );
+                              const minutes = Math.floor(totalSeconds / 60);
+                              const seconds = totalSeconds - minutes * 60;
+                              return `${minutes
+                                .toString()
+                                .padStart(2, "0")}:${seconds
+                                .toString()
+                                .padStart(2, "0")}`;
+                            })()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <Button
+                    type="button"
+                    onClick={() => handleAddEvent("feeding")}
+                    disabled={isSaving}
+                    className="w-full bg-[#ffbcbc] text-xs text-rose-900 hover:bg-[#ffb0b0] disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? (
+                      <>
+                        <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
+                        Saugoma...
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          viewBox="0 0 64 64"
+                          className="mr-1.5 h-3.5 w-3.5"
+                          aria-hidden="true"
+                          fill="currentColor"
+                        >
+                          <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
+                        </svg>
+                        {feedingMethod === "breast"
+                          ? activeBreastFeeding
+                            ? "Baigti žindymą"
+                            : "Pradėti žindymą"
+                          : editingId && editingType === "feeding"
+                          ? "Atnaujinti maitinimą"
+                          : "Išsaugoti maitinimą"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {entryCategory === "diaper" && (
+                <div className="space-y-3 rounded-2xl border border-[#e2d4f2] bg-[#f6edf9] p-4 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#eee2f5] text-purple-800">
+                      <svg
+                        viewBox="0 0 64 64"
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                        fill="currentColor"
+                      >
+                        <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
+                      </svg>
+                    </div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Sauskelnių keitimas
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-slate-600">
+                        Sauskelnių tipas
+                      </p>
+                      <div className="flex flex-col gap-1 rounded-2xl bg-[#ebe0f7] p-1.5 text-[11px] font-medium">
+                        <button
+                          type="button"
+                          onClick={() => setDiaperKind("wet")}
+                          className={`rounded-full px-3 py-2 transition ${
+                            diaperKind === "wet"
+                              ? "bg-[#d8c8f3] text-purple-900 shadow-sm"
+                              : "text-slate-700 hover:text-slate-900"
+                          }`}
+                        >
+                          Šlapias
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDiaperKind("dirty")}
+                          className={`rounded-full px-3 py-2 transition ${
+                            diaperKind === "dirty"
+                              ? "bg-[#d8c8f3] text-purple-900 shadow-sm"
+                              : "text-slate-700 hover:text-slate-900"
+                          }`}
+                        >
+                          Purvinas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDiaperKind("both")}
+                          className={`rounded-full px-3 py-2 transition ${
+                            diaperKind === "both"
+                              ? "bg-[#d8c8f3] text-purple-900 shadow-sm"
+                              : "text-slate-700 hover:text-slate-900"
+                          }`}
+                        >
+                          Abu
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => handleAddEvent("diaper")}
+                    disabled={isSaving}
+                    className="w-full bg-[#d8c8f3] text-xs text-purple-900 hover:bg-[#cfbdf0] disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? (
+                      <>
+                        <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
+                        Saugoma...
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          viewBox="0 0 64 64"
+                          className="mr-1.5 h-3.5 w-3.5"
+                          aria-hidden="true"
+                          fill="currentColor"
+                        >
+                          <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
+                        </svg>
+                        {editingId && editingType === "diaper"
+                          ? "Atnaujinti sauskelnes"
+                          : "Išsaugoti sauskelnes"}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {entryCategory === "sleep" && (
+                <div className="space-y-3 rounded-2xl border border-[#ffe5bf] bg-[#fff5dd] p-4 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#ffe5bf] text-amber-800">
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-6 w-6"
+                        aria-hidden="true"
+                        fill="currentColor"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          clipRule="evenodd"
+                          d="M18 2.75C17.5858 2.75 17.25 2.41421 17.25 2C17.25 1.58579 17.5858 1.25 18 1.25H22C22.3034 1.25 22.5768 1.43273 22.6929 1.71299C22.809 1.99324 22.7449 2.31583 22.5304 2.53033L19.8107 5.25H22C22.4142 5.25 22.75 5.58579 22.75 6C22.75 6.41421 22.4142 6.75 22 6.75H18C17.6967 6.75 17.4232 6.56727 17.3071 6.28701C17.191 6.00676 17.2552 5.68417 17.4697 5.46967L20.1894 2.75H18ZM13.5 8.75C13.0858 8.75 12.75 8.41421 12.75 8C12.75 7.58579 13.0858 7.25 13.5 7.25H16.5C16.8034 7.25 17.0768 7.43273 17.1929 7.71299C17.309 7.99324 17.2449 8.31583 17.0304 8.53033L15.3107 10.25H16.5C16.9142 10.25 17.25 10.5858 17.25 11C17.25 11.4142 16.9142 11.75 16.5 11.75H13.5C13.1967 11.75 12.9232 11.5673 12.8071 11.287C12.691 11.0068 12.7552 10.6842 12.9697 10.4697L14.6894 8.75H13.5Z"
+                        />
+                        <path d="M12 22C17.5228 22 22 17.5228 22 12C22 11.5373 21.3065 11.4608 21.0672 11.8568C19.9289 13.7406 17.8615 15 15.5 15C11.9101 15 9 12.0899 9 8.5C9 6.13845 10.2594 4.07105 12.1432 2.93276C12.5392 2.69347 12.4627 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" />
+                      </svg>
+                    </div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Miegas
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    Paspausk, kai kūdikis užmiega, ir dar kartą – kai prabunda.
+                  </p>
+                  {activeSleep && (
+                    <div className="text-center">
+                      <div className="mx-auto inline-flex max-w-full items-center gap-3 rounded-2xl bg-[#ffeedd] px-5 py-3.5 text-lg font-semibold text-amber-900 ring-1 ring-[#ffe5bf]">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ffdca7]">
+                          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-700" />
                         </span>
                         <span className="font-mono text-2xl sm:text-3xl">
                           {(() => {
                             const diffMs =
                               now.getTime() -
-                              new Date(activeBreastFeeding.time).getTime();
+                              new Date(activeSleep.time).getTime();
                             const totalSeconds = Math.max(
                               0,
                               Math.floor(diffMs / 1000)
@@ -1446,187 +1932,87 @@ export default function Home() {
                       </div>
                     </div>
                   )}
+                  <Button
+                    type="button"
+                    onClick={() => handleAddEvent("sleep")}
+                    disabled={isSaving}
+                    className="w-full bg-[#ffe5bf] text-xs text-amber-900 hover:bg-[#ffdca7] disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? (
+                      <>
+                        <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
+                        Saugoma...
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          viewBox="0 0 64 64"
+                          className="mr-1.5 h-3.5 w-3.5"
+                          aria-hidden="true"
+                          fill="currentColor"
+                        >
+                          <path d="M48.9,30.65a11,11,0,1,0-18.76-7.42c0,1-1.21,3-2.33,4.39-1.44-2.48-1.84-4.49-1.64-5.48a3.47,3.47,0,0,0-.52-2.62,3.49,3.49,0,0,0-4.85-1,3.46,3.46,0,0,0-1.49,2.23A14.19,14.19,0,0,0,20.68,29a11.64,11.64,0,0,0-5.37,3.06A11.75,11.75,0,0,0,31.93,48.68,11.58,11.58,0,0,0,35,43.16a19.63,19.63,0,0,0,7.51,1.6,3.5,3.5,0,1,0,0-7h0a13,13,0,0,1-6.08-1.65c1.33-1.08,3.34-2.29,4.22-2.26A11,11,0,0,0,48.9,30.65ZM29.33,39.76a5.74,5.74,0,1,1-5.26-5.12s.07,0,.11,0a31.62,31.62,0,0,0,2.45,2.74A30.28,30.28,0,0,0,29.33,39.76Zm1.19,7.51a9.75,9.75,0,1,1-8.91-16.43c.34.61.71,1.22,1.13,1.85a7.74,7.74,0,1,0,8.58,8.5c.63.41,1.24.76,1.85,1.09A9.69,9.69,0,0,1,30.52,47.27Zm12-7.51h0a1.51,1.51,0,0,1,1.06.43,1.51,1.51,0,0,1-1.06,2.57C39.66,42.76,34,41.87,28,36s-7.39-11.71-6.77-14.79a1.47,1.47,0,0,1,.64-.95,1.44,1.44,0,0,1,.82-.25,1.53,1.53,0,0,1,.3,0,1.47,1.47,0,0,1,1,.63,1.51,1.51,0,0,1,.22,1.13c-.49,2.46,1.16,7.29,5.95,12.08C35.32,39,40.13,39.76,42.54,39.76Zm-11-7.34A26.49,26.49,0,0,1,29,29.36c1.25-1.37,3.25-4.29,3.19-6.2a9,9,0,0,1,18-.79,9,9,0,0,1-9.35,9.49c-2-.09-4.86,2-6.1,3.15A22.65,22.65,0,0,1,31.58,32.42Z" />
+                        </svg>
+                        Pradėti / baigti miegą
+                      </>
+                    )}
+                  </Button>
                 </div>
-              </div>
-              <Button
-                type="button"
-                onClick={() => handleAddEvent("feeding")}
-                disabled={isSaving}
-                className="w-full bg-rose-500 text-xs text-white hover:bg-rose-600 disabled:cursor-not-allowed"
-              >
-                {isSaving ? (
-                  <>
-                    <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
-                    Saugoma...
-                  </>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 64 64" className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" fill="currentColor">
-                      <path d="M50.74,9l-2.41,2.41c-2.8-1.59-5.95-1.71-8.13-.22l-.07-.07a3,3,0,0,0-4.24,0,3,3,0,0,0-.76,1.32,3,3,0,0,0-2.78.8L9,36.6a3,3,0,0,0,0,4.24L23.16,55h0a3,3,0,0,0,4.24,0L50.74,31.65A3,3,0,0,0,51.21,28a2.86,2.86,0,0,0,.94-.64,3,3,0,0,0,.54-3.47c1.6-2.18,1.5-5.4-.12-8.26L55,13.26A3,3,0,0,0,50.74,9Zm-1.42,5.66c2.39,2.39,3.18,5.6,2,7.67l-9.7-9.7C43.72,11.5,46.93,12.29,49.32,14.68Zm-12-2.13a1,1,0,0,1,1.42,0l12,12a1,1,0,0,1,0,1.41,1,1,0,0,1-1.42,0l-12-12a1,1,0,0,1,0-1.42ZM26,53.57a1,1,0,0,1-1.41,0h0L10.43,39.42a1,1,0,0,1,0-1.41l17-17L43,36.6,41.55,38l-5.66-5.66a1,1,0,0,0-1.41,1.42l5.65,5.65L37.3,42.25l-3.53-3.53a1,1,0,0,0-1.42,0,1,1,0,0,0,0,1.41l3.54,3.54L33.06,46.5,27.4,40.84A1,1,0,0,0,26,42.25l5.66,5.66-2.83,2.83L25.28,47.2a1,1,0,0,0-1.41,0,1,1,0,0,0,0,1.42l3.53,3.53ZM49.32,30.23l-5,4.95L28.82,19.63l5-4.95a1,1,0,0,1,1.41,0l.71.7,12,12,1.41,1.42A1,1,0,0,1,49.32,30.23Zm4.25-18.38L51.45,14,50,12.55l2.12-2.12a1,1,0,0,1,1.42,1.42Z" />
-                    </svg>
-                    {feedingMethod === "breast"
-                      ? activeBreastFeeding
-                        ? "Baigti žindymą"
-                        : "Pradėti žindymą"
-                      : editingId && editingType === "feeding"
-                      ? "Atnaujinti maitinimą"
-                      : "Išsaugoti maitinimą"}
-                  </>
-                )}
-              </Button>
-              </div>
+              )}
 
-            {/* Sauskelnių keitimas */}
-            <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 shadow-sm">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-sky-700">
-                  <svg viewBox="0 0 64 64" className="h-4 w-4" aria-hidden="true" fill="currentColor">
-                    <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Sauskelnių keitimas
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    Užfiksuok kiekvieną keitimą
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="space-y-1">
-                  <p className="text-[11px] font-medium text-slate-600">
-                    Sauskelnių tipas
-                  </p>
-                  <div className="flex flex-col gap-1 rounded-2xl bg-slate-100 p-1.5 text-[11px] font-medium">
-                    <button
-                      type="button"
-                      onClick={() => setDiaperKind("wet")}
-                      className={`rounded-full px-3 py-2 transition ${
-                        diaperKind === "wet"
-                          ? "bg-sky-600 text-white shadow-sm"
-                          : "text-slate-700 hover:text-slate-900"
-                      }`}
-                    >
-                      Šlapias
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDiaperKind("dirty")}
-                      className={`rounded-full px-3 py-2 transition ${
-                        diaperKind === "dirty"
-                          ? "bg-sky-600 text-white shadow-sm"
-                          : "text-slate-700 hover:text-slate-900"
-                      }`}
-                    >
-                      Purvinas
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDiaperKind("both")}
-                      className={`rounded-full px-3 py-2 transition ${
-                        diaperKind === "both"
-                          ? "bg-sky-600 text-white shadow-sm"
-                          : "text-slate-700 hover:text-slate-900"
-                      }`}
-                    >
-                      Abu
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <Button
-                type="button"
-                onClick={() => handleAddEvent("diaper")}
-                disabled={isSaving}
-                className="w-full bg-sky-600 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed"
-              >
-                {isSaving ? (
-                  <>
-                    <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
-                    Saugoma...
-                  </>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 64 64" className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" fill="currentColor">
-                      <path d="M55,15a1,1,0,0,0-1-1H10a1,1,0,0,0-1,1V31a22.76,22.76,0,0,0,.26,3.42h0v0c.07.46.16.92.25,1.37,0,.15.07.29.1.44.07.3.15.6.23.89s.1.37.16.54.16.52.25.77c.14.41.29.8.45,1.19,0,.12.09.24.14.36.13.3.26.59.4.88,0,.06,0,.11.08.16A22.91,22.91,0,0,0,21.8,51.61l.45.22.69.31.87.35.32.13h0a23,23,0,0,0,15.68,0h0l.33-.14.86-.34.69-.31.45-.22A23,23,0,0,0,52.68,41.07l.09-.19.39-.86.15-.39c.16-.38.3-.76.44-1.16s.17-.51.25-.77.11-.37.16-.55.15-.59.22-.88.08-.3.11-.45c.09-.45.18-.91.25-1.36v0h0A22.76,22.76,0,0,0,55,31ZM52.59,35.1c0,.11-.05.23-.07.34-.13.58-.27,1.15-.44,1.71,0,0,0,.08,0,.12a17,17,0,0,1-.68,1.85.69.69,0,0,1,0,.1A21.06,21.06,0,0,1,40.23,50.31l-.1,0-.27.1a10.36,10.36,0,0,1-1.86-6,10.49,10.49,0,0,1,14.63-9.65C52.61,34.93,52.61,35,52.59,35.1ZM48.5,32A12.37,12.37,0,0,0,43,33.29V22H53v9c0,.61,0,1.21-.09,1.81A12.27,12.27,0,0,0,48.5,32ZM53,20H43V16H53ZM24.14,50.46l-.26-.1-.12,0a21.1,21.1,0,0,1-11.08-11.1l0-.08A18,18,0,0,1,12,37.27s0-.08,0-.11c-.17-.56-.31-1.14-.44-1.72,0-.11-.05-.23-.07-.34s0-.17,0-.25A10.49,10.49,0,0,1,24.14,50.46ZM15.5,32a12.27,12.27,0,0,0-4.41.81C11,32.21,11,31.61,11,31V22h9V32.85A12.46,12.46,0,0,0,15.5,32ZM20,16v4H11V16Zm6.08,35.14A12.46,12.46,0,0,0,22,33.84V16H41V34a1.06,1.06,0,0,0,.11.44,12.45,12.45,0,0,0-3.19,16.7,20.81,20.81,0,0,1-11.84,0Z" />
-                    </svg>
-                    {editingId && editingType === "diaper"
-                      ? "Atnaujinti sauskelnes"
-                      : "Išsaugoti sauskelnes"}
-                  </>
-                )}
-              </Button>
-            </div>
-
-              {/* Miegas */}
-              <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 shadow-sm">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100 text-purple-700">
-                    <svg viewBox="0 0 64 64" className="h-4 w-4" aria-hidden="true" fill="currentColor">
-                      <path d="M48.9,30.65a11,11,0,1,0-18.76-7.42c0,1-1.21,3-2.33,4.39-1.44-2.48-1.84-4.49-1.64-5.48a3.47,3.47,0,0,0-.52-2.62,3.49,3.49,0,0,0-4.85-1,3.46,3.46,0,0,0-1.49,2.23A14.19,14.19,0,0,0,20.68,29a11.64,11.64,0,0,0-5.37,3.06A11.75,11.75,0,0,0,31.93,48.68,11.58,11.58,0,0,0,35,43.16a19.63,19.63,0,0,0,7.51,1.6,3.5,3.5,0,1,0,0-7h0a13,13,0,0,1-6.08-1.65c1.33-1.08,3.34-2.29,4.22-2.26A11,11,0,0,0,48.9,30.65ZM29.33,39.76a5.74,5.74,0,1,1-5.26-5.12s.07,0,.11,0a31.62,31.62,0,0,0,2.45,2.74A30.28,30.28,0,0,0,29.33,39.76Zm1.19,7.51a9.75,9.75,0,1,1-8.91-16.43c.34.61.71,1.22,1.13,1.85a7.74,7.74,0,1,0,8.58,8.5c.63.41,1.24.76,1.85,1.09A9.69,9.69,0,0,1,30.52,47.27Zm12-7.51h0a1.51,1.51,0,0,1,1.06.43,1.51,1.51,0,0,1-1.06,2.57C39.66,42.76,34,41.87,28,36s-7.39-11.71-6.77-14.79a1.47,1.47,0,0,1,.64-.95,1.44,1.44,0,0,1,.82-.25,1.53,1.53,0,0,1,.3,0,1.47,1.47,0,0,1,1,.63,1.51,1.51,0,0,1,.22,1.13c-.49,2.46,1.16,7.29,5.95,12.08C35.32,39,40.13,39.76,42.54,39.76Zm-11-7.34A26.49,26.49,0,0,1,29,29.36c1.25-1.37,3.25-4.29,3.19-6.2a9,9,0,0,1,18-.79,9,9,0,0,1-9.35,9.49c-2-.09-4.86,2-6.1,3.15A22.65,22.65,0,0,1,31.58,32.42Z" />
-                    </svg>
-                  </div>
-                  <div>
+              {entryCategory === "pumping" && (
+                <div className="space-y-3 rounded-2xl border border-[#fde7ff] bg-[#fff4ff] p-4 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#fde7ff] text-fuchsia-800">
+                      <svg
+                        viewBox="0 0 512 512"
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                        fill="currentColor"
+                      >
+                        <path d="M288.209,331.768c-13.486,0-25.843-2.991-37.793-5.891c-11.956-2.888-24.313-5.885-37.688-5.885c-10.64,0-20.838,1.883-31.166,5.753l-4.05,1.509V445.54c0,3.696,1.032,7.11,3.08,10.156c1.974,2.907,4.811,5.254,8.003,6.604c2.257,0.948,4.57,1.419,7.068,1.419h120.653c3.704-0.007,7.117-1.046,10.15-3.088c2.914-1.959,5.254-4.805,6.611-8.017c0.941-2.222,1.412-4.597,1.412-7.054V320.324l-8.619,3.565C313.02,329.186,300.697,331.768,288.209,331.768z" />
+                        <path d="M381.115,200.834c0.028-4.888-0.215-21.71-4.458-32.759c-5.303-13.777-19.322-35.134-34.892-47.581c-5.096-4.085-10.911-8.19-17.065-12.538c-7.304-5.157-19.98-14.116-25.255-19.716c0.146-0.235,0.298-0.471,0.443-0.686c4.05-6.265,10.841-16.739,10.841-32.815C310.729,24.563,286.18,0,256.003,0c-30.184,0-54.732,24.563-54.732,54.74c0,16.068,6.791,26.55,10.841,32.815c0.145,0.215,0.298,0.45,0.45,0.686c-5.282,5.593-17.958,14.559-25.262,19.716c-6.148,4.348-11.97,8.453-17.072,12.538c-15.563,12.454-29.588,33.811-34.885,47.581c-4.236,11.049-4.479,27.871-4.458,32.759l0.07,11.603h-0.07v235.719c0,8.626,1.696,16.982,5.061,24.86c4.866,11.402,12.924,21.122,23.295,28.08c10.62,7.13,23.047,10.904,35.93,10.904h121.636c8.674,0,17.1-1.689,25.02-5.026c11.506-4.833,21.295-12.822,28.294-23.123c7.2-10.55,11-22.894,10.994-35.694V212.437h-0.07L381.115,200.834z M155.731,175.905c4.209-10.952,16.151-28.772,28.135-38.367c17.051-13.632,48.163-31.305,51.389-45.269c3.136-13.61-12.15-18.45-12.15-37.529c0-18.18,14.726-32.904,32.898-32.904c18.166,0,32.898,14.725,32.898,32.904c0,19.08-15.293,23.919-12.157,37.529c3.226,13.964,34.338,31.638,51.389,45.269c11.984,9.595,23.926,27.415,28.135,38.367c3.109,8.072,3.012,24.812,3.012,24.812H152.72C152.72,200.717,152.623,183.977,155.731,175.905z M359.653,233.732v16.373v198.051c0,5.753-1.128,11.319-3.364,16.553c-3.233,7.615-8.612,14.094-15.542,18.74c-7.089,4.742-15.376,7.248-23.954,7.255H195.206c-5.788,0-11.402-1.128-16.671-3.343c-7.67-3.213-14.199-8.543-18.879-15.424c-4.784-7.034-7.304-15.259-7.31-23.78V250.105v-16.373v-11.18h0.374h206.56h0.374V233.732z" />
+                      </svg>
+                    </div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Miegas
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Pradžia ir pabaiga vienu mygtuku
+                      Nutraukimas
                     </p>
                   </div>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Paspausk, kai kūdikis užmiega, ir dar kartą – kai prabunda.
-                </p>
-                {activeSleep && (
-                  <div className="text-center">
-                    <div className="mx-auto inline-flex max-w-full items-center gap-3 rounded-2xl bg-purple-50 px-5 py-3.5 text-lg font-semibold text-purple-800 ring-1 ring-purple-200">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-purple-200">
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-purple-700" />
-                      </span>
-                      <span className="font-mono text-2xl sm:text-3xl">
-                        {(() => {
-                          const diffMs =
-                            now.getTime() -
-                            new Date(activeSleep.time).getTime();
-                          const totalSeconds = Math.max(
-                            0,
-                            Math.floor(diffMs / 1000)
-                          );
-                          const minutes = Math.floor(totalSeconds / 60);
-                          const seconds = totalSeconds - minutes * 60;
-                          return `${minutes
-                            .toString()
-                            .padStart(2, "0")}:${seconds
-                            .toString()
-                            .padStart(2, "0")}`;
-                        })()}
-                      </span>
+                  <p className="text-[11px] text-slate-600">
+                    Užfiksuok, kiek nutraukto pieno surinkta šiuo metu.
+                  </p>
+                  <div className="space-y-2">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-slate-600">
+                        Kiekis (ml)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={amountMl}
+                        onChange={(e) => setAmountMl(e.target.value)}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[16px] shadow-sm outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                        placeholder="pvz. 60"
+                      />
                     </div>
                   </div>
-                )}
-                <Button
-                  type="button"
-                  onClick={() => handleAddEvent("sleep")}
-                  disabled={isSaving}
-                  className="w-full bg-purple-600 text-xs text-white hover:bg-purple-700 disabled:cursor-not-allowed"
-                >
-                  {isSaving ? (
-                    <>
-                      <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
-                      Saugoma...
-                    </>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 64 64" className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" fill="currentColor">
-                        <path d="M48.9,30.65a11,11,0,1,0-18.76-7.42c0,1-1.21,3-2.33,4.39-1.44-2.48-1.84-4.49-1.64-5.48a3.47,3.47,0,0,0-.52-2.62,3.49,3.49,0,0,0-4.85-1,3.46,3.46,0,0,0-1.49,2.23A14.19,14.19,0,0,0,20.68,29a11.64,11.64,0,0,0-5.37,3.06A11.75,11.75,0,0,0,31.93,48.68,11.58,11.58,0,0,0,35,43.16a19.63,19.63,0,0,0,7.51,1.6,3.5,3.5,0,1,0,0-7h0a13,13,0,0,1-6.08-1.65c1.33-1.08,3.34-2.29,4.22-2.26A11,11,0,0,0,48.9,30.65ZM29.33,39.76a5.74,5.74,0,1,1-5.26-5.12s.07,0,.11,0a31.62,31.62,0,0,0,2.45,2.74A30.28,30.28,0,0,0,29.33,39.76Zm1.19,7.51a9.75,9.75,0,1,1-8.91-16.43c.34.61.71,1.22,1.13,1.85a7.74,7.74,0,1,0,8.58,8.5c.63.41,1.24.76,1.85,1.09A9.69,9.69,0,0,1,30.52,47.27Zm12-7.51h0a1.51,1.51,0,0,1,1.06.43,1.51,1.51,0,0,1-1.06,2.57C39.66,42.76,34,41.87,28,36s-7.39-11.71-6.77-14.79a1.47,1.47,0,0,1,.64-.95,1.44,1.44,0,0,1,.82-.25,1.53,1.53,0,0,1,.3,0,1.47,1.47,0,0,1,1,.63,1.51,1.51,0,0,1,.22,1.13c-.49,2.46,1.16,7.29,5.95,12.08C35.32,39,40.13,39.76,42.54,39.76Zm-11-7.34A26.49,26.49,0,0,1,29,29.36c1.25-1.37,3.25-4.29,3.19-6.2a9,9,0,0,1,18-.79,9,9,0,0,1-9.35,9.49c-2-.09-4.86,2-6.1,3.15A22.65,22.65,0,0,1,31.58,32.42Z" />
-                      </svg>
-                      Pradėti / baigti miegą
-                    </>
-                  )}
-                </Button>
-              </div>
+                  <Button
+                    type="button"
+                    onClick={() => handleAddEvent("pumping")}
+                    disabled={isSaving}
+                    className="w-full bg-[#fde7ff] text-xs text-fuchsia-900 hover:bg-[#f9d9ff] disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? (
+                      <>
+                        <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border border-white/70 border-b-transparent" />
+                        Saugoma...
+                      </>
+                    ) : (
+                      <>Išsaugoti nutraukimą</>
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -1658,16 +2044,21 @@ export default function Home() {
                               ? "Maitinimas"
                               : e.type === "diaper"
                               ? "Sauskelnių keitimas"
-                              : "Miegas"}
+                              : e.type === "sleep"
+                              ? "Miegas"
+                              : "Nutraukimas"}
                           </span>
                           {" | "}
                           <span>
                             {e.type === "feeding"
                               ? e.feedingMethod === "breast"
-                                ? "Krūtimi"
-                                : e.feedingMethod === "pumped"
-                                ? `Mamos pienas${
-                                    e.amountMl ? ` ${e.amountMl} ml` : ""
+                                ? `Krūtimi${
+                                    (e as FeedingEvent).breastSide === "left"
+                                      ? " (kairė)"
+                                      : (e as FeedingEvent).breastSide ===
+                                        "right"
+                                      ? " (dešinė)"
+                                      : ""
                                   }`
                                 : `Mišinėlis${
                                     e.amountMl &&
@@ -1681,6 +2072,10 @@ export default function Home() {
                                 : e.diaperKind === "dirty"
                                 ? "Purvinas"
                                 : "Šlapias ir purvinas"
+                              : e.type === "pumping"
+                              ? e.amountMl
+                                ? `${e.amountMl} ml`
+                                : "Nutraukimas"
                               : e.sleepEnd
                               ? `nuo ${formatTimeLabel(
                                   e.time

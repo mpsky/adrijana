@@ -1,9 +1,32 @@
 const STORAGE_KEY = "baby-diary-baby-v1";
+const GENDER_KEY = "baby-diary-baby-gender-v1";
 
 export type BabyInfo = {
   name: string;
   birthIso: string;
 };
+
+export type BabyGender = "female" | "male" | "";
+
+export function getBabyGender(): BabyGender {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = window.localStorage.getItem(GENDER_KEY);
+    if (raw === "female" || raw === "male") return raw;
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
+export function setBabyGenderStorage(gender: BabyGender): void {
+  if (typeof window === "undefined") return;
+  if (gender === "female" || gender === "male") {
+    window.localStorage.setItem(GENDER_KEY, gender);
+  } else {
+    window.localStorage.removeItem(GENDER_KEY);
+  }
+}
 
 const DEFAULT_BABY: BabyInfo = {
   name: "Adrijana",
@@ -60,3 +83,4 @@ export function fromLocalDateTimeInputValue(value: string): string {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? DEFAULT_BABY.birthIso : d.toISOString();
 }
+
