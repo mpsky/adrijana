@@ -1,11 +1,11 @@
-\"use client\";
+"use client";
 
-import { useEffect, useMemo, useState } from \"react\";
-import Image from \"next/image\";
-import { supabase } from \"@/lib/supabaseClient\";
-import { useAuth } from \"@/lib/authContext\";
-import { getBabyInfo, setBabyInfo } from \"@/lib/babyStorage\";
-import { Button } from \"@/components/Button\";
+import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/authContext";
+import { getBabyInfo, setBabyInfo } from "@/lib/babyStorage";
+import { Button } from "@/components/Button";
 
 type EventType = "feeding" | "diaper" | "sleep" | "pumping";
 
@@ -251,6 +251,10 @@ export default function Home() {
               feedingMethod: row.feeding_method,
               amountMl: row.amount_ml ?? undefined,
               durationMinutes: row.duration_minutes ?? undefined,
+              breastSide:
+                row.breast_side === "left" || row.breast_side === "right"
+                  ? row.breast_side
+                  : null,
             };
           } else if (row.type === "diaper") {
             mapped = {
@@ -299,6 +303,10 @@ export default function Home() {
               feedingMethod: row.feeding_method,
               amountMl: row.amount_ml ?? undefined,
               durationMinutes: row.duration_minutes ?? undefined,
+              breastSide:
+                row.breast_side === "left" || row.breast_side === "right"
+                  ? row.breast_side
+                  : null,
             };
           } else if (row.type === "diaper") {
             mapped = {
@@ -1252,6 +1260,14 @@ export default function Home() {
                         {stats.todayDirtyDiapers}
                       </span>
                     </div>
+                    <div className="flex flex-1 items-baseline gap-1 border-l border-emerald-200 pl-4">
+                      <span className="font-medium text-slate-600">
+                        Abu
+                      </span>
+                      <span className="font-semibold text-emerald-800">
+                        {stats.todayBothDiapers}
+                      </span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl bg-purple-50 px-3 py-2 ring-1 ring-purple-100">
@@ -1295,6 +1311,17 @@ export default function Home() {
                             </span>
                           </>
                         )}
+                      {stats.todayPumpedAmount > 0 && (
+                        <>
+                          <span className="mx-1 text-slate-500">•</span>
+                          <span className="text-slate-600">
+                            Nutraukta šiandien{" "}
+                            <span className="font-semibold text-rose-700">
+                              {stats.todayPumpedAmount} ml
+                            </span>
+                          </span>
+                        </>
+                      )}
                     </>
                   ) : (
                     <span className="text-slate-400">Dar nėra maitinimų.</span>
@@ -1324,10 +1351,6 @@ export default function Home() {
                   <dd className="text-right text-[11px] text-slate-600">
                   {lastDiaperEvent ? (
                     <>
-                      <span className="font-semibold text-slate-50">
-                        {formatAgo(lastDiaperEvent.time, now)}
-                      </span>
-                      <span className="mx-1 text-slate-500">•</span>
                       <span>
                         {lastDiaperEvent.diaperKind === "wet"
                           ? "šlapias"
@@ -2074,8 +2097,8 @@ export default function Home() {
                                 : "Šlapias ir purvinas"
                               : e.type === "pumping"
                               ? e.amountMl
-                                ? `${e.amountMl} ml`
-                                : "Nutraukimas"
+                                ? `Nutrauktas pienas ${e.amountMl} ml`
+                                : "Nutrauktas pienas"
                               : e.sleepEnd
                               ? `nuo ${formatTimeLabel(
                                   e.time
