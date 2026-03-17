@@ -1694,7 +1694,7 @@ export default function Home() {
                   </span>
                 </p>
               </div>
-              <div className="relative h-3.5 w-full overflow-hidden rounded-full bg-sky-100/70 ring-1 ring-sky-200">
+              <div className="relative h-6 w-full overflow-hidden rounded-full bg-sky-100/70 ring-1 ring-sky-200">
                 <div
                   className="absolute inset-y-0 left-0 rounded-full bg-sky-500"
                   style={{
