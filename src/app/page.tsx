@@ -1694,9 +1694,9 @@ export default function Home() {
                   </span>
                 </p>
               </div>
-              <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-sky-100">
+              <div className="relative h-3.5 w-full overflow-hidden rounded-full bg-sky-100/70 ring-1 ring-sky-200">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-sky-400 via-sky-500 to-emerald-400"
+                  className="absolute inset-y-0 left-0 rounded-full bg-sky-500"
                   style={{
                     width: `${Math.max(
                       0,
@@ -1709,7 +1709,7 @@ export default function Home() {
                     )}%`,
                   }}
                 />
-                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-sky-900/80">
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-sky-900">
                   {Math.round(feedingGuidance.last3hFormulaMl)} /{" "}
                   {feedingGuidance.limit3h} ml
                 </div>
