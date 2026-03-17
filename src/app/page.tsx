@@ -483,11 +483,11 @@ export default function Home() {
         }
       } else if (e.type === "pumping") {
         if (typeof e.amountMl === "number") {
+          // Čia skaičiuojame tik pagamintą (nutrauktą) pieną,
+          // be suvartojimo – suvartotas skaičiuojamas tik per feedingMethod === "pumped".
           base.totalPumpedAmount += e.amountMl;
-          base.totalExpressedAndUsed += e.amountMl;
           if (isSameDayKey(e.time, selectedDateKey)) {
             base.todayPumpedAmount += e.amountMl;
-            base.todayExpressedAndUsed += e.amountMl;
           }
         }
       }
@@ -627,23 +627,50 @@ export default function Home() {
     const dayWindowStart = nowMs - dayMs;
 
     let last3hFormulaMl = 0;
+    const last3hFeedings: {
+      id: string;
+      time: string;
+      amountMl: number | null;
+      method: FeedingEvent["feedingMethod"];
+    }[] = [];
     let last3hEarliestMs: number | null = null;
 
     let last24hFormulaMl = 0;
 
     for (const e of events) {
-      if (e.type !== "feeding" || e.feedingMethod !== "formula") continue;
+      if (e.type !== "feeding") continue;
       const t = new Date(e.time).getTime();
       if (Number.isNaN(t)) continue;
 
-      if (t >= threeHourWindowStart && t <= nowMs && typeof e.amountMl === "number") {
-        last3hFormulaMl += e.amountMl;
-        if (last3hEarliestMs == null || t < last3hEarliestMs) {
+      if (t >= threeHourWindowStart && t <= nowMs) {
+        if (typeof e.amountMl === "number") {
+          if (e.feedingMethod === "formula") {
+            last3hFormulaMl += e.amountMl;
+            last24hFormulaMl += e.amountMl;
+          } else if (e.feedingMethod === "pumped") {
+            // suvartotas nutrauktas pienas įtraukiamas į 3h suvartojimą,
+            // bet ne į mišinėlio 24h limitą
+            last3hFormulaMl += e.amountMl;
+          }
+        }
+        last3hFeedings.push({
+          id: e.id,
+          time: e.time,
+          amountMl: typeof e.amountMl === "number" ? e.amountMl : null,
+          method: e.feedingMethod,
+        });
+        if (
+          typeof e.amountMl === "number" &&
+          (last3hEarliestMs == null || t < last3hEarliestMs)
+        ) {
           last3hEarliestMs = t;
         }
-      }
-
-      if (t >= dayWindowStart && t <= nowMs && typeof e.amountMl === "number") {
+      } else if (
+        e.feedingMethod === "formula" &&
+        t >= dayWindowStart &&
+        t <= nowMs &&
+        typeof e.amountMl === "number"
+      ) {
         last24hFormulaMl += e.amountMl;
       }
     }
@@ -678,6 +705,7 @@ export default function Home() {
       remaining24h,
       limit3h,
       limit24h,
+      last3hFeedings,
     };
   }, [events, now, threeHourLimitInfo.limit]);
 
@@ -1651,31 +1679,96 @@ export default function Home() {
                 <span>Informacija</span>
               </button>
             </div>
-            <dl className="mt-3 space-y-1.5 text-xs text-slate-600">
-              <div className="flex items-center justify-between">
-                <dt>Per paskutines 3 val.</dt>
-                <dd className="font-semibold text-sky-700">
-                  {Math.round(feedingGuidance.last3hFormulaMl)} ml
-                </dd>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between text-[11px] text-slate-600">
+                <p className="flex items-center gap-1">
+                  <span>Per paskutines 3 val.</span>
+                  <span className="font-semibold text-sky-700">
+                    {Math.round(feedingGuidance.last3hFormulaMl)} ml
+                  </span>
+                </p>
+                <p className="flex items-center gap-1">
+                  <span>Liko iki ribos</span>
+                  <span className="font-semibold text-emerald-700">
+                    {Math.max(0, Math.round(feedingGuidance.remaining3h))} ml
+                  </span>
+                </p>
               </div>
-              <div className="flex items-center justify-between">
-                <dt>Liko iki ribos</dt>
-                <dd className="font-semibold text-emerald-700">
-                  {Math.max(0, Math.round(feedingGuidance.remaining3h))} ml
-                </dd>
+              <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-sky-100">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-sky-400 via-sky-500 to-emerald-400"
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (feedingGuidance.last3hFormulaMl /
+                          Math.max(feedingGuidance.limit3h || 1, 1)) *
+                          100
+                      )
+                    )}%`,
+                  }}
+                />
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-sky-900/80">
+                  {Math.round(feedingGuidance.last3hFormulaMl)} /{" "}
+                  {feedingGuidance.limit3h} ml
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <dt>Kada galima vėl?</dt>
-                <dd className="text-right">
+              <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600">
+                <span>Kada galima vėl?</span>
+                <span className="text-right">
                   {feedingGuidance.next3hAvailableInMinutes != null &&
                   feedingGuidance.next3hAvailableInMinutes > 0
                     ? `Maždaug po ${
                         feedingGuidance.next3hAvailableInMinutes
                       } min`
-                    : "–"}
-                </dd>
+                    : "Jau galima."}
+                </span>
               </div>
-            </dl>
+              {feedingGuidance.last3hFeedings.length > 0 && (
+                <div className="mt-2 rounded-xl bg-white/70 p-2 text-[11px] text-slate-600 ring-1 ring-sky-100">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Per paskutines 3 val. suvartota
+                  </p>
+                  <ul className="space-y-0.5">
+                    {feedingGuidance.last3hFeedings
+                      .slice()
+                      .sort(
+                        (a, b) =>
+                          new Date(b.time).getTime() -
+                          new Date(a.time).getTime()
+                      )
+                      .map((f) => (
+                        <li
+                          key={f.id}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="text-[10px] text-slate-500">
+                            {new Date(f.time).toLocaleTimeString("lt-LT", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span>
+                              {f.method === "formula"
+                                ? "Mišinėlis"
+                                : f.method === "pumped"
+                                ? "Nutrauktas pienas"
+                                : "Krūtimi"}
+                            </span>
+                            {typeof f.amountMl === "number" && (
+                              <span className="font-semibold text-slate-800">
+                                {f.amountMl} ml
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+            </div>
             {show3hInfo && (
               <div className="mt-3 rounded-2xl bg-white/90 p-3 text-[11px] text-slate-600 ring-1 ring-sky-100">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
@@ -1809,7 +1902,7 @@ export default function Home() {
                   >
                     <svg
                       viewBox="0 0 64 64"
-                      className="h-7 w-7"
+                      className="h-8 w-8"
                       aria-hidden="true"
                       fill="currentColor"
                     >
@@ -1828,7 +1921,7 @@ export default function Home() {
                   >
                     <svg
                       viewBox="0 0 64 64"
-                      className="h-7 w-7"
+                      className="h-8 w-8"
                       aria-hidden="true"
                       fill="currentColor"
                     >
@@ -1846,17 +1939,19 @@ export default function Home() {
                     aria-label="Miegas"
                   >
                     <svg
-                      viewBox="0 0 24 24"
+                      viewBox="0 0 66 66"
                       className="h-8 w-8"
                       aria-hidden="true"
-                      fill="currentColor"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
                     >
-                      <path
-                        fillRule="evenodd"
-                        clipRule="evenodd"
-                        d="M18 2.75C17.5858 2.75 17.25 2.41421 17.25 2C17.25 1.58579 17.5858 1.25 18 1.25H22C22.3034 1.25 22.5768 1.43273 22.6929 1.71299C22.809 1.99324 22.7449 2.31583 22.5304 2.53033L19.8107 5.25H22C22.4142 5.25 22.75 5.58579 22.75 6C22.75 6.41421 22.4142 6.75 22 6.75H18C17.6967 6.75 17.4232 6.56727 17.3071 6.28701C17.191 6.00676 17.2552 5.68417 17.4697 5.46967L20.1894 2.75H18ZM13.5 8.75C13.0858 8.75 12.75 8.41421 12.75 8C12.75 7.58579 13.0858 7.25 13.5 7.25H16.5C16.8034 7.25 17.0768 7.43273 17.1929 7.71299C17.309 7.99324 17.2449 8.31583 17.0304 8.53033L15.3107 10.25H16.5C16.9142 10.25 17.25 10.5858 17.25 11C17.25 11.4142 16.9142 11.75 16.5 11.75H13.5C13.1967 11.75 12.9232 11.5673 12.8071 11.287C12.691 11.0068 12.7552 10.6842 12.9697 10.4697L14.6894 8.75H13.5Z"
-                      />
-                      <path d="M12 22C17.5228 22 22 17.5228 22 12C22 11.5373 21.3065 11.4608 21.0672 11.8568C19.9289 13.7406 17.8615 15 15.5 15C11.9101 15 9 12.0899 9 8.5C9 6.13845 10.2594 4.07105 12.1432 2.93276C12.5392 2.69347 12.4627 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" />
+                      <g transform="translate(1,2)">
+                        <path d="M48.7,45.8 C30.8,45.8 16.3,31.3 16.3,13.4 C16.3,8.6 17.3,4.1 19.2,0.1 C7.9,5.2 0.1,16.5 0.1,29.7 C0.1,47.6 14.6,62.1 32.5,62.1 C45.7,62.1 57,54.3 62.1,43 C57.9,44.8 53.4,45.8 48.7,45.8 L48.7,45.8 Z" />
+                        <path d="M28.7,1.8 L33.2,5.5 L38.8,4 L36.6,9.4 L39.8,14.3 L34,13.9 L30.3,18.4 L28.9,12.7 L23.5,10.7 L28.4,7.6 L28.7,1.8 Z" />
+                        <path d="M49.5,22.5 L50.2,28.3 L55.4,31 L50.1,33.5 L49.2,39.2 L45.2,35 L39.4,35.9 L42.2,30.8 L39.6,25.6 L45.3,26.6 L49.5,22.5 Z" />
+                        <path d="M56.7,3.8 L56.3,8.5 L59.9,11.6 L55.3,12.6 L53.5,17 L51.1,12.9 L46.4,12.6 L49.5,9 L48.3,4.4 L52.7,6.3 L56.7,3.8 Z" />
+                      </g>
                     </svg>
                   </button>
                   <button
@@ -1871,7 +1966,7 @@ export default function Home() {
                   >
                     <svg
                       viewBox="0 0 512 512"
-                      className="h-7 w-7"
+                      className="h-8 w-8"
                       aria-hidden="true"
                       fill="currentColor"
                     >
