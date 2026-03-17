@@ -825,6 +825,20 @@ export default function Home() {
     [events]
   );
 
+  // Jei yra aktyvus maitinimas krūtimi, UI turi atspindėti pasirinktą krūtį
+  // ir neleisti pasirinkti kitos kol laikmatis vyksta (taip pat po puslapio perkrovimo).
+  useEffect(() => {
+    if (activeBreastFeeding) {
+      setFeedingMethod("breast");
+      const side = activeBreastFeeding.breastSide;
+      if (side === "right") {
+        setBreastSide("right");
+      } else {
+        setBreastSide("left");
+      }
+    }
+  }, [activeBreastFeeding]);
+
   function startEdit(event: BabyEvent) {
     if (event.type === "feeding") {
       setFeedingMethod(event.feedingMethod);
@@ -947,6 +961,10 @@ export default function Home() {
               feedingMethod: data.feeding_method,
               amountMl: data.amount_ml ?? undefined,
               durationMinutes: data.duration_minutes ?? undefined,
+              breastSide:
+                data.breast_side === "left" || data.breast_side === "right"
+                  ? data.breast_side
+                  : null,
             };
             setEvents((prev) => [newEvent, ...prev]);
           }
@@ -975,6 +993,10 @@ export default function Home() {
               feedingMethod: data.feeding_method,
               amountMl: data.amount_ml ?? undefined,
               durationMinutes: data.duration_minutes ?? undefined,
+              breastSide:
+                data.breast_side === "left" || data.breast_side === "right"
+                  ? data.breast_side
+                  : null,
             };
             setEvents((prev) =>
               prev.map((e) => (e.id === updated.id ? updated : e))
@@ -1307,13 +1329,58 @@ export default function Home() {
         <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 pb-24 pt-6 sm:px-6 sm:py-10">
         {/* Kūdikio info viršuje */}
         <section>
-          <div className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-sky-50 via-rose-50 to-indigo-50 px-4 py-3 text-xs text-slate-800 shadow-sm ring-1 ring-slate-100 sm:px-5">
-            <p className="truncate text-[13px] font-semibold text-slate-900">
-              {babyInfo.name || "Kūdikis"}
-              <span className="ml-2 text-[11px] font-normal text-slate-600">
-                {babyAgeLabel ? `• ${babyAgeLabel}` : ""}
-              </span>
-            </p>
+          <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-800 shadow-sm ring-1 ring-slate-100 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <path d="M12 12c2.21 0 4-1.79 4-4S14.21 4 12 4 8 5.79 8 8s1.79 4 4 4Z" />
+                  <path d="M4 20c0-2.761 3.134-5 7-5s7 2.239 7 5" />
+                </svg>
+              </div>
+              <p className="flex min-w-0 items-center gap-2 truncate text-[13px] text-slate-900">
+                <span className="font-semibold">
+                  {babyInfo.name || "Kūdikis"}
+                </span>
+                <span className="flex items-center gap-1 text-[11px] font-normal text-slate-600">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-3 w-3"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path d="M12 6v6l3 3" />
+                    <circle cx="12" cy="12" r="8" />
+                  </svg>
+                  <span className="truncate">
+                    {babyBirthDisplay ? `Gimė ${babyBirthDisplay}` : ""}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1 text-[11px] font-normal text-slate-600">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-3 w-3"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
+                    <path d="M7 8.5C7 6.567 8.567 5 10.5 5s3.5 1.567 3.5 3.5S12.433 12 10.5 12H7v1.5" />
+                    <path d="M7 16h7" />
+                    <rect x="4" y="4" width="16" height="16" rx="8" />
+                  </svg>
+                  <span className="truncate">{babyAgeLabel}</span>
+                </span>
+              </p>
+            </div>
           </div>
         </section>
 
@@ -1800,7 +1867,7 @@ export default function Home() {
                         ? "bg-[#fde7ff] text-fuchsia-900 shadow-sm"
                         : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
                     }`}
-                    aria-label="Nutraukimas"
+                    aria-label="Nutrauktas pienas"
                   >
                     <svg
                       viewBox="0 0 512 512"
@@ -1843,11 +1910,12 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={() => setFeedingMethod("breast")}
+                        disabled={!!activeBreastFeeding}
                         className={`rounded-full px-3 py-2 transition ${
                           feedingMethod === "breast"
                             ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
                             : "text-rose-900 hover:text-rose-700"
-                        }`}
+                        } ${activeBreastFeeding ? "opacity-60 cursor-not-allowed" : ""}`}
                       >
                         Krūtimi
                       </button>
@@ -1886,22 +1954,24 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => setBreastSide("left")}
+                          disabled={!!activeBreastFeeding}
                           className={`flex-1 rounded-full px-3 py-1.75 text-[11px] font-medium transition active:scale-95 ${
                             breastSide === "left"
                               ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
                               : "bg-transparent text-slate-600 hover:bg-[#ffe5e5]"
-                          }`}
+                          } ${activeBreastFeeding ? "opacity-60 cursor-not-allowed" : ""}`}
                         >
                           Kairė
                         </button>
                         <button
                           type="button"
                           onClick={() => setBreastSide("right")}
+                          disabled={!!activeBreastFeeding}
                           className={`flex-1 rounded-full px-3 py-1.75 text-[11px] font-medium transition active:scale-95 ${
                             breastSide === "right"
                               ? "bg-[#ffbcbc] text-rose-900 shadow-sm"
                               : "bg-transparent text-slate-600 hover:bg-[#ffe5e5]"
-                          }`}
+                          } ${activeBreastFeeding ? "opacity-60 cursor-not-allowed" : ""}`}
                         >
                           Dešinė
                         </button>
@@ -2174,7 +2244,7 @@ export default function Home() {
                       </svg>
                     </div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Nutraukimas
+                      Nutrauktas pienas
                     </p>
                   </div>
                   <p className="text-[11px] text-slate-600">

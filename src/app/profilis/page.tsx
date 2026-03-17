@@ -1142,7 +1142,7 @@ export default function ProfilisPage() {
                           : "text-slate-600 hover:bg-slate-100"
                       }`}
                     >
-                      Nutraukimas
+                      Nutrauktas pienas
                     </button>
                   </div>
                 </div>
@@ -1186,7 +1186,7 @@ export default function ProfilisPage() {
                             : "text-slate-600 hover:bg-slate-100"
                         }`}
                       >
-                        Nutrauktas (ml)
+                        Nutrauktas pienas (ml)
                       </button>
                     </div>
                   </div>
@@ -1404,7 +1404,7 @@ export default function ProfilisPage() {
                                   (e.feedingMethod === "formula"
                                     ? `Mišinėlis ${(e.amountMl ?? 0)} ml`
                                     : e.feedingMethod === "pumped"
-                                    ? `Nutrauktas ${(e.amountMl ?? 0)} ml`
+                                    ? `Nutrauktas pienas ${(e.amountMl ?? 0)} ml`
                                     : `Krūtimi ${
                                         (e as FeedingEvent).breastSide ===
                                         "left"
@@ -1420,7 +1420,7 @@ export default function ProfilisPage() {
                                       ? "šlapias"
                                       : e.diaperKind === "dirty"
                                       ? "purvinas"
-                                      : "abu"
+                                      : "šlapias ir purvinas"
                                   }`}
                                 {e.type === "sleep" &&
                                   (e.sleepEnd
