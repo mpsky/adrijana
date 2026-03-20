@@ -848,6 +848,10 @@ export default function Home() {
     useState<string>("none");
   const daySummarySlideAnimatingRef = useRef(false);
   const daySummarySlideTimeoutIdsRef = useRef<number[]>([]);
+  const [daySummarySwipeDirection, setDaySummarySwipeDirection] = useState<
+    "older" | "newer" | null
+  >(null);
+  const [daySummaryIsDragging, setDaySummaryIsDragging] = useState(false);
 
   function clearDaySummarySlideTimers() {
     for (const id of daySummarySlideTimeoutIdsRef.current) {
@@ -866,6 +870,43 @@ export default function Home() {
     const t = e.touches[0];
     if (!t) return;
     daySummaryTouchStartRef.current = { x: t.clientX, y: t.clientY };
+    setDaySummaryIsDragging(true);
+    daySummarySlideAnimatingRef.current = false;
+    clearDaySummarySlideTimers();
+    setDaySummarySlideTransition("none");
+    setDaySummarySlideOffsetPx(0);
+    setDaySummarySwipeDirection(null);
+  }
+
+  function handleDaySummaryTouchMove(
+    e: ReactTouchEvent<HTMLDListElement>
+  ) {
+    if (!daySummaryTouchStartRef.current) return;
+    if (!daySummaryIsDragging) return;
+
+    const start = daySummaryTouchStartRef.current;
+    const t = e.touches[0];
+    if (!t) return;
+
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    // Jei judėjimas labiau vertikalus - nekeičiame transform, kad nesukonfliktuotų scroll.
+    if (absDy > absDx) return;
+
+    // Pakankamai pakeliame tiek, kad būtų "drag", bet ne per daug.
+    const maxDragPx = 180;
+    const nextOffset = Math.max(-maxDragPx, Math.min(maxDragPx, dx));
+    setDaySummarySlideOffsetPx(nextOffset);
+
+    if (absDx >= 10) {
+      setDaySummarySwipeDirection(dx > 0 ? "older" : "newer");
+    }
+
+    // Snap'as įvyksta touchEnd pagal swipe logiką.
   }
 
   function handleDaySummaryTouchEnd(
@@ -873,6 +914,7 @@ export default function Home() {
   ) {
     const start = daySummaryTouchStartRef.current;
     daySummaryTouchStartRef.current = null;
+    setDaySummaryIsDragging(false);
     if (!start) return;
 
     const t = e.changedTouches[0];
@@ -904,8 +946,11 @@ export default function Home() {
     clearDaySummarySlideTimers();
 
     const dir = dx > 0 ? 1 : -1; // su judesiu
-    const exitOffset = dir * 60;
-    const enterOffset = -dir * 60;
+    const nextDirection = dx > 0 ? "older" : "newer";
+    setDaySummarySwipeDirection(nextDirection);
+
+    const exitOffset = dir * 140;
+    const enterOffset = -dir * 140;
 
     // 1) stumiame dabartinę sekciją iš ekrano
     setDaySummarySlideTransition("transform 140ms ease-out");
@@ -923,6 +968,7 @@ export default function Home() {
 
         const t2 = window.setTimeout(() => {
           daySummarySlideAnimatingRef.current = false;
+          setDaySummarySwipeDirection(null);
         }, 190);
         daySummarySlideTimeoutIdsRef.current.push(t2);
       });
@@ -963,6 +1009,11 @@ export default function Home() {
       }
     }
   }, [activeBreastFeeding]);
+
+  const daySummarySlideOpacity = Math.max(
+    0.4,
+    1 - Math.min(0.6, Math.abs(daySummarySlideOffsetPx) / 220)
+  );
 
   useEffect(() => {
     // Jei yra aktyvus laikmatis, automatiškai rodyk atitinkamą įrašo tabą.
@@ -1602,13 +1653,43 @@ export default function Home() {
               <dl
                 className="mt-3 space-y-1.5 text-xs text-slate-600"
                 onTouchStart={handleDaySummaryTouchStart}
+                onTouchMove={handleDaySummaryTouchMove}
                 onTouchEnd={handleDaySummaryTouchEnd}
                 style={{
                   touchAction: "pan-y",
                   transform: `translateX(${daySummarySlideOffsetPx}px)`,
                   transition: daySummarySlideTransition,
+                  opacity: daySummarySlideOpacity,
                 }}
               >
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none mb-2 flex items-center justify-between px-1"
+                >
+                  <span className="flex items-center gap-1 rounded-l-lg border-l-2 border-slate-200 bg-white/70 px-2 py-1 text-[10px] font-semibold text-slate-500">
+                    ◀︎ Senesnė
+                  </span>
+                  <span className="flex items-center gap-1 rounded-r-lg border-r-2 border-slate-200 bg-white/70 px-2 py-1 text-[10px] font-semibold text-slate-500">
+                    Naujesnė ▶︎
+                  </span>
+                </div>
+                {daySummarySwipeDirection && (
+                  <div
+                    aria-hidden="true"
+                    className="mb-1 flex items-center justify-center"
+                    style={{
+                      color: "rgba(71, 85, 105, 0.85)",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      letterSpacing: "0.02em",
+                    }}
+                  >
+                    {daySummarySwipeDirection === "older" ? "◀︎" : "▶︎"}{" "}
+                    {daySummarySwipeDirection === "older"
+                      ? "senesnė diena"
+                      : "tolimesnė diena"}
+                  </div>
+                )}
                 <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-3 py-2 ring-1 ring-sky-100">
                   <dt className="text-[11px] font-medium text-slate-700">
                     Mišinėlis
