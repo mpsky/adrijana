@@ -1186,7 +1186,7 @@ export default function ProfilisPage() {
                             : "text-slate-600 hover:bg-slate-100"
                         }`}
                       >
-                        Nutrauktas pienas (ml)
+                        Suvartotas nutrauktas pienas (ml)
                       </button>
                     </div>
                   </div>
@@ -1402,10 +1402,10 @@ export default function ProfilisPage() {
                                 </span>{" "}
                                 {e.type === "feeding" &&
                                   (e.feedingMethod === "formula"
-                                    ? `Mišinėlis ${(e.amountMl ?? 0)} ml`
+                                    ? `Maitinimas: Mišinėlis ${(e.amountMl ?? 0)} ml`
                                     : e.feedingMethod === "pumped"
-                                    ? `Nutrauktas pienas ${(e.amountMl ?? 0)} ml`
-                                    : `Krūtimi ${
+                                    ? `Maitinimas: Suvartotas nutrauktas pienas ${(e.amountMl ?? 0)} ml`
+                                    : `Maitinimas: Krūtimi ${
                                         (e as FeedingEvent).breastSide ===
                                         "left"
                                           ? "(kairė) "

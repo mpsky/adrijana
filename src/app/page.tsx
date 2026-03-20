@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
@@ -763,8 +769,8 @@ export default function Home() {
   const archiveByDay = useMemo(() => {
     const groups: Record<string, BabyEvent[]> = {};
     for (const e of events) {
-      const d = new Date(e.time);
-      const key = d.toISOString().slice(0, 10);
+      const key = dateKeyFromIso(e.time);
+      if (!key) continue;
       if (!groups[key]) groups[key] = [];
       groups[key].push(e);
     }
@@ -826,13 +832,104 @@ export default function Home() {
         }
       } else if (e.type === "pumping") {
         if (typeof e.amountMl === "number") {
-          base.todayExpressedAndUsed += e.amountMl;
           base.todayPumpedAmount += e.amountMl;
         }
       }
     }
     return base;
   }, [events, availableDateKeys, selectedDateKey]);
+
+  const daySummaryTouchStartRef = useRef<{ x: number; y: number } | null>(
+    null
+  );
+
+  const [daySummarySlideOffsetPx, setDaySummarySlideOffsetPx] = useState(0);
+  const [daySummarySlideTransition, setDaySummarySlideTransition] =
+    useState<string>("none");
+  const daySummarySlideAnimatingRef = useRef(false);
+  const daySummarySlideTimeoutIdsRef = useRef<number[]>([]);
+
+  function clearDaySummarySlideTimers() {
+    for (const id of daySummarySlideTimeoutIdsRef.current) {
+      window.clearTimeout(id);
+    }
+    daySummarySlideTimeoutIdsRef.current = [];
+  }
+
+  useEffect(() => {
+    return () => clearDaySummarySlideTimers();
+  }, []);
+
+  function handleDaySummaryTouchStart(
+    e: ReactTouchEvent<HTMLDListElement>
+  ) {
+    const t = e.touches[0];
+    if (!t) return;
+    daySummaryTouchStartRef.current = { x: t.clientX, y: t.clientY };
+  }
+
+  function handleDaySummaryTouchEnd(
+    e: ReactTouchEvent<HTMLDListElement>
+  ) {
+    const start = daySummaryTouchStartRef.current;
+    daySummaryTouchStartRef.current = null;
+    if (!start) return;
+
+    const t = e.changedTouches[0];
+    if (!t) return;
+
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+
+    // Prioritetas horizontalui; jei daugiau juda vertikaliai - laikom scroll'u.
+    const swipeThresholdPx = 70;
+    if (absDx < swipeThresholdPx || absDy > absDx) return;
+
+    const idx = availableDateKeys.findIndex((k) => k === selectedDateKey);
+    if (idx === -1) return;
+    if (availableDateKeys.length <= 1) return;
+
+    // dx > 0: kairė -> dešinė => senesnė (idx + 1)
+    // dx < 0: dešinė -> kairė => naujesnė (idx - 1)
+    const nextIdx = dx > 0 ? idx + 1 : idx - 1;
+    if (nextIdx < 0 || nextIdx >= availableDateKeys.length) return;
+
+    const nextKey = availableDateKeys[nextIdx];
+    if (nextKey === selectedDateKey) return;
+
+    if (daySummarySlideAnimatingRef.current) return;
+    daySummarySlideAnimatingRef.current = true;
+    clearDaySummarySlideTimers();
+
+    const dir = dx > 0 ? 1 : -1; // su judesiu
+    const exitOffset = dir * 60;
+    const enterOffset = -dir * 60;
+
+    // 1) stumiame dabartinę sekciją iš ekrano
+    setDaySummarySlideTransition("transform 140ms ease-out");
+    setDaySummarySlideOffsetPx(exitOffset);
+
+    const t1 = window.setTimeout(() => {
+      // 2) pakeičiam datą, įkeliant turinį iš kitos pusės
+      setSelectedDateKey(nextKey);
+      setDaySummarySlideTransition("none");
+      setDaySummarySlideOffsetPx(enterOffset);
+
+      requestAnimationFrame(() => {
+        setDaySummarySlideTransition("transform 180ms ease-in-out");
+        setDaySummarySlideOffsetPx(0);
+
+        const t2 = window.setTimeout(() => {
+          daySummarySlideAnimatingRef.current = false;
+        }, 190);
+        daySummarySlideTimeoutIdsRef.current.push(t2);
+      });
+    }, 140);
+
+    daySummarySlideTimeoutIdsRef.current.push(t1);
+  }
 
   const activeSleep = useMemo(
     () =>
@@ -866,6 +963,16 @@ export default function Home() {
       }
     }
   }, [activeBreastFeeding]);
+
+  useEffect(() => {
+    // Jei yra aktyvus laikmatis, automatiškai rodyk atitinkamą įrašo tabą.
+    // Taip įkėlus puslapį ar prisijungus UI bus "aktualus" (miegas / žindymas).
+    if (activeSleep) {
+      setEntryCategory("sleep");
+    } else if (activeBreastFeeding) {
+      setEntryCategory("feeding");
+    }
+  }, [activeSleep, activeBreastFeeding]);
 
   function startEdit(event: BabyEvent) {
     if (event.type === "feeding") {
@@ -940,7 +1047,9 @@ export default function Home() {
           type: "sleep",
           time: data.time,
           notes: data.notes ?? undefined,
-          sleepEnd: data.sleep_end ?? undefined,
+          // Kai baigiam miegą, UI logikai svarbu iškart matyti, kad laikmatis baigtas.
+          // Jei DB atsako su null, vis tiek užbaigiame pagal dabar.
+          sleepEnd: data.sleep_end ?? nowIso,
         };
         setEvents((prev) =>
           prev.map((e) => (e.id === updated.id ? updated : e))
@@ -1016,11 +1125,16 @@ export default function Home() {
             const updated: FeedingEvent = {
               id: data.id,
               type: "feeding",
-              time: data.time,
+              time: data.time ?? active.time,
               notes: data.notes ?? undefined,
               feedingMethod: data.feeding_method,
               amountMl: data.amount_ml ?? undefined,
-              durationMinutes: data.duration_minutes ?? undefined,
+              // Kai baigiama žindyti, laikmačiu laikomas įrašas su durationMinutes == null.
+              // Jei DB atsako null, UI vis tiek turi persijungti į "Pradėti žindymą".
+              durationMinutes:
+                typeof data.duration_minutes === "number"
+                  ? data.duration_minutes
+                  : minutes,
               breastSide:
                 data.breast_side === "left" || data.breast_side === "right"
                   ? data.breast_side
@@ -1485,7 +1599,16 @@ export default function Home() {
               </div>
 
               {/* Today summary */}
-              <dl className="mt-3 space-y-1.5 text-xs text-slate-600">
+              <dl
+                className="mt-3 space-y-1.5 text-xs text-slate-600"
+                onTouchStart={handleDaySummaryTouchStart}
+                onTouchEnd={handleDaySummaryTouchEnd}
+                style={{
+                  touchAction: "pan-y",
+                  transform: `translateX(${daySummarySlideOffsetPx}px)`,
+                  transition: daySummarySlideTransition,
+                }}
+              >
                 <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-3 py-2 ring-1 ring-sky-100">
                   <dt className="text-[11px] font-medium text-slate-700">
                     Mišinėlis
@@ -2317,7 +2440,7 @@ export default function Home() {
                         >
                           <path d="M48.9,30.65a11,11,0,1,0-18.76-7.42c0,1-1.21,3-2.33,4.39-1.44-2.48-1.84-4.49-1.64-5.48a3.47,3.47,0,0,0-.52-2.62,3.49,3.49,0,0,0-4.85-1,3.46,3.46,0,0,0-1.49,2.23A14.19,14.19,0,0,0,20.68,29a11.64,11.64,0,0,0-5.37,3.06A11.75,11.75,0,0,0,31.93,48.68,11.58,11.58,0,0,0,35,43.16a19.63,19.63,0,0,0,7.51,1.6,3.5,3.5,0,1,0,0-7h0a13,13,0,0,1-6.08-1.65c1.33-1.08,3.34-2.29,4.22-2.26A11,11,0,0,0,48.9,30.65ZM29.33,39.76a5.74,5.74,0,1,1-5.26-5.12s.07,0,.11,0a31.62,31.62,0,0,0,2.45,2.74A30.28,30.28,0,0,0,29.33,39.76Zm1.19,7.51a9.75,9.75,0,1,1-8.91-16.43c.34.61.71,1.22,1.13,1.85a7.74,7.74,0,1,0,8.58,8.5c.63.41,1.24.76,1.85,1.09A9.69,9.69,0,0,1,30.52,47.27Zm12-7.51h0a1.51,1.51,0,0,1,1.06.43,1.51,1.51,0,0,1-1.06,2.57C39.66,42.76,34,41.87,28,36s-7.39-11.71-6.77-14.79a1.47,1.47,0,0,1,.64-.95,1.44,1.44,0,0,1,.82-.25,1.53,1.53,0,0,1,.3,0,1.47,1.47,0,0,1,1,.63,1.51,1.51,0,0,1,.22,1.13c-.49,2.46,1.16,7.29,5.95,12.08C35.32,39,40.13,39.76,42.54,39.76Zm-11-7.34A26.49,26.49,0,0,1,29,29.36c1.25-1.37,3.25-4.29,3.19-6.2a9,9,0,0,1,18-.79,9,9,0,0,1-9.35,9.49c-2-.09-4.86,2-6.1,3.15A22.65,22.65,0,0,1,31.58,32.42Z" />
                         </svg>
-                        Pradėti / baigti miegą
+                        {activeSleep ? "Baigti miegą" : "Pradėti miegą"}
                       </>
                     )}
                   </Button>
