@@ -103,6 +103,62 @@ function isSameDayKey(iso: string, key: string) {
   return dateKeyFromIso(iso) === key;
 }
 
+function getVilniusDayRangeMs(dayKey: string) {
+  // dayKey formatu: YYYY-MM-DD
+  // Grąžinam start/end ms, kurie atitinka 00:00-24:00 konkrečioje Europe/Vilnius laiko zonoje.
+  const parts = dayKey.split("-");
+  if (parts.length !== 3) return null;
+  const [yStr, mStr, dStr] = parts;
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const d = Number(dStr);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+
+  const timeZone = "Europe/Vilnius";
+
+  // Offset skaičiavimas pagal Intl (UTC <-> given timezone) tuo momentu.
+  function getTimeZoneOffsetMs(date: Date) {
+    const dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    const parts = dtf.formatToParts(date);
+    const map: Record<string, string> = {};
+    for (const p of parts) {
+      if (p.type !== "literal") map[p.type] = p.value;
+    }
+    const asUTC = Date.UTC(
+      Number(map.year),
+      Number(map.month) - 1,
+      Number(map.day),
+      Number(map.hour),
+      Number(map.minute),
+      Number(map.second)
+    );
+    return asUTC - date.getTime();
+  }
+
+  // Pirminė UTC spėjimo reikšmė (00:00 UTC) koreguojama pagal offset, kad atitiktų 00:00 Vilniuje.
+  const utcGuess = Date.UTC(y, m - 1, d, 0, 0, 0);
+  const offset = getTimeZoneOffsetMs(new Date(utcGuess));
+  const startMs = utcGuess - offset;
+  const endMs = startMs + 24 * 60 * 60 * 1000;
+  return { startMs, endMs };
+}
+
+function overlapMinutes(startMs: number, endMs: number, rangeStartMs: number, rangeEndMs: number) {
+  const s = Math.max(startMs, rangeStartMs);
+  const e = Math.min(endMs, rangeEndMs);
+  if (e <= s) return 0;
+  return Math.max(0, Math.round((e - s) / 60000));
+}
+
 function formatDelta(current: number, prev: number) {
   const diff = current - prev;
   if (!Number.isFinite(diff) || diff === 0) return "0";
@@ -417,6 +473,8 @@ export default function Home() {
       totalSleepMinutes: 0,
     };
 
+    const dayRange = selectedDateKey ? getVilniusDayRangeMs(selectedDateKey) : null;
+
     for (const e of events) {
       if (e.type === "feeding") {
         const isRealFeeding =
@@ -436,7 +494,7 @@ export default function Home() {
         }
         if (
           e.feedingMethod === "breast" &&
-          typeof e.durationMinutes === "number"
+            typeof e.durationMinutes === "number"
         ) {
           base.totalBreastMinutes += e.durationMinutes;
         }
@@ -459,8 +517,25 @@ export default function Home() {
             e.feedingMethod === "breast" &&
             typeof e.durationMinutes === "number"
           ) {
-            base.todayBreastMinutes += e.durationMinutes;
+            // cross-day handling bus atliekamas po "isSameDayKey" bloko
           }
+        }
+
+        // Krūtimi (durationMinutes) gali kirsti per dienas, todėl todayBreastMinutes skaičiuojam
+        // pagal persidengimą su pasirinkta diena.
+        if (
+          e.feedingMethod === "breast" &&
+          typeof e.durationMinutes === "number" &&
+          dayRange
+        ) {
+          const startMs = new Date(e.time).getTime();
+          const endMs = startMs + e.durationMinutes * 60000;
+          base.todayBreastMinutes += overlapMinutes(
+            startMs,
+            endMs,
+            dayRange.startMs,
+            dayRange.endMs
+          );
         }
       } else if (e.type === "diaper") {
         base.totalDiapers += 1;
@@ -474,18 +549,23 @@ export default function Home() {
             base.todayBothDiapers += 1;
           }
         }
-      } else if (e.type === "sleep" && e.sleepEnd) {
-        const start = new Date(e.time).getTime();
-        const end = new Date(e.sleepEnd).getTime();
-        const minutes = Math.max(0, Math.round((end - start) / 60000));
-        base.totalSleepMinutes += minutes;
-        // Į dienos statistiką traukiame tik tuos miego įrašus,
-        // kurių PRADŽIA ir PABAIGA yra toje pačioje pasirinktą dieną.
-        if (
-          isSameDayKey(e.time, selectedDateKey) &&
-          isSameDayKey(e.sleepEnd, selectedDateKey)
-        ) {
-          base.todaySleepMinutes += minutes;
+      } else if (e.type === "sleep") {
+        // totalSleepMinutes skaičiuojam tik kai miegas baigtas (yra sleepEnd),
+        // o todaySleepMinutes - pagal persidengimą su pasirinkta diena,
+        // įtraukiant ir vykstantį miegą (iki now) UI lygmenyje (žemiau).
+        const startMs = new Date(e.time).getTime();
+        const endMs = e.sleepEnd ? new Date(e.sleepEnd).getTime() : null;
+        if (endMs != null && Number.isFinite(endMs)) {
+          const minutesTotal = Math.max(0, Math.round((endMs - startMs) / 60000));
+          base.totalSleepMinutes += minutesTotal;
+          if (dayRange) {
+            base.todaySleepMinutes += overlapMinutes(
+              startMs,
+              endMs,
+              dayRange.startMs,
+              dayRange.endMs
+            );
+          }
         }
       } else if (e.type === "pumping") {
         if (typeof e.amountMl === "number") {
@@ -501,16 +581,6 @@ export default function Home() {
 
     return base;
   }, [events, selectedDateKey]);
-
-  const todaySleepHoursLabel = useMemo(() => {
-    const minutes = stats.todaySleepMinutes;
-    if (!minutes) return "0 val.";
-    const hours = minutes / 60;
-    if (hours < 1) {
-      return `${minutes} min`;
-    }
-    return `${hours.toFixed(1)} val.`;
-  }, [stats.todaySleepMinutes]);
 
   const [now, setNow] = useState<Date>(new Date());
   const [show3hInfo, setShow3hInfo] = useState(false);
@@ -785,6 +855,12 @@ export default function Home() {
     [archiveByDay]
   );
 
+  const prevDayKey = useMemo(() => {
+    const idx = availableDateKeys.findIndex((k) => k === selectedDateKey);
+    if (idx === -1 || idx + 1 >= availableDateKeys.length) return null;
+    return availableDateKeys[idx + 1] ?? null;
+  }, [availableDateKeys, selectedDateKey]);
+
   const prevStats = useMemo(() => {
     // surandame „vakar“ pagal turimų įrašų sąrašą, o ne kalendoriaus datą.
     // availableDateKeys yra surūšiuotas DESC (naujausia diena pirmoje vietoje),
@@ -801,6 +877,7 @@ export default function Home() {
       };
     }
     const key = availableDateKeys[idx + 1];
+    const keyRange = getVilniusDayRangeMs(key);
     const base = {
       todayFormulaAmount: 0,
       todayExpressedAndUsed: 0,
@@ -823,12 +900,13 @@ export default function Home() {
       } else if (e.type === "sleep" && e.sleepEnd) {
         const start = new Date(e.time).getTime();
         const end = new Date(e.sleepEnd).getTime();
-        if (
-          isSameDayKey(e.time, key) &&
-          isSameDayKey(e.sleepEnd, key)
-        ) {
-          const minutes = Math.max(0, Math.round((end - start) / 60000));
-          base.todaySleepMinutes += minutes;
+        if (keyRange && Number.isFinite(start) && Number.isFinite(end)) {
+          base.todaySleepMinutes += overlapMinutes(
+            start,
+            end,
+            keyRange.startMs,
+            keyRange.endMs
+          );
         }
       } else if (e.type === "pumping") {
         if (typeof e.amountMl === "number") {
@@ -848,10 +926,6 @@ export default function Home() {
     useState<string>("none");
   const daySummarySlideAnimatingRef = useRef(false);
   const daySummarySlideTimeoutIdsRef = useRef<number[]>([]);
-  const [daySummarySwipeDirection, setDaySummarySwipeDirection] = useState<
-    "older" | "newer" | null
-  >(null);
-  const [daySummaryIsDragging, setDaySummaryIsDragging] = useState(false);
 
   function clearDaySummarySlideTimers() {
     for (const id of daySummarySlideTimeoutIdsRef.current) {
@@ -870,43 +944,10 @@ export default function Home() {
     const t = e.touches[0];
     if (!t) return;
     daySummaryTouchStartRef.current = { x: t.clientX, y: t.clientY };
-    setDaySummaryIsDragging(true);
     daySummarySlideAnimatingRef.current = false;
     clearDaySummarySlideTimers();
     setDaySummarySlideTransition("none");
     setDaySummarySlideOffsetPx(0);
-    setDaySummarySwipeDirection(null);
-  }
-
-  function handleDaySummaryTouchMove(
-    e: ReactTouchEvent<HTMLDListElement>
-  ) {
-    if (!daySummaryTouchStartRef.current) return;
-    if (!daySummaryIsDragging) return;
-
-    const start = daySummaryTouchStartRef.current;
-    const t = e.touches[0];
-    if (!t) return;
-
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-
-    // Jei judėjimas labiau vertikalus - nekeičiame transform, kad nesukonfliktuotų scroll.
-    if (absDy > absDx) return;
-
-    // Pakankamai pakeliame tiek, kad būtų "drag", bet ne per daug.
-    const maxDragPx = 180;
-    const nextOffset = Math.max(-maxDragPx, Math.min(maxDragPx, dx));
-    setDaySummarySlideOffsetPx(nextOffset);
-
-    if (absDx >= 10) {
-      setDaySummarySwipeDirection(dx > 0 ? "older" : "newer");
-    }
-
-    // Snap'as įvyksta touchEnd pagal swipe logiką.
   }
 
   function handleDaySummaryTouchEnd(
@@ -914,7 +955,6 @@ export default function Home() {
   ) {
     const start = daySummaryTouchStartRef.current;
     daySummaryTouchStartRef.current = null;
-    setDaySummaryIsDragging(false);
     if (!start) return;
 
     const t = e.changedTouches[0];
@@ -946,8 +986,6 @@ export default function Home() {
     clearDaySummarySlideTimers();
 
     const dir = dx > 0 ? 1 : -1; // su judesiu
-    const nextDirection = dx > 0 ? "older" : "newer";
-    setDaySummarySwipeDirection(nextDirection);
 
     const exitOffset = dir * 140;
     const enterOffset = -dir * 140;
@@ -968,7 +1006,6 @@ export default function Home() {
 
         const t2 = window.setTimeout(() => {
           daySummarySlideAnimatingRef.current = false;
-          setDaySummarySwipeDirection(null);
         }, 190);
         daySummarySlideTimeoutIdsRef.current.push(t2);
       });
@@ -984,6 +1021,41 @@ export default function Home() {
       ) as SleepEvent | undefined,
     [events]
   );
+
+  const activeSleepMinutesSelectedDay = useMemo(() => {
+    if (!activeSleep) return 0;
+    if (!selectedDateKey) return 0;
+    const range = getVilniusDayRangeMs(selectedDateKey);
+    if (!range) return 0;
+    const startMs = new Date(activeSleep.time).getTime();
+    const endMs = now.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return 0;
+    return overlapMinutes(startMs, endMs, range.startMs, range.endMs);
+  }, [activeSleep, selectedDateKey, now]);
+
+  const activeSleepMinutesPrevDay = useMemo(() => {
+    if (!activeSleep || !prevDayKey) return 0;
+    const range = getVilniusDayRangeMs(prevDayKey);
+    if (!range) return 0;
+    const startMs = new Date(activeSleep.time).getTime();
+    const endMs = now.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return 0;
+    return overlapMinutes(startMs, endMs, range.startMs, range.endMs);
+  }, [activeSleep, prevDayKey, now]);
+
+  const todaySleepMinutesUi = stats.todaySleepMinutes + activeSleepMinutesSelectedDay;
+  const prevSleepMinutesUi =
+    prevStats.todaySleepMinutes + activeSleepMinutesPrevDay;
+
+  const todaySleepHoursLabelUi = useMemo(() => {
+    const minutes = todaySleepMinutesUi;
+    if (!minutes) return "0 val.";
+    const hours = minutes / 60;
+    if (hours < 1) {
+      return `${minutes} min`;
+    }
+    return `${hours.toFixed(1)} val.`;
+  }, [todaySleepMinutesUi]);
 
   const activeBreastFeeding = useMemo(
     () =>
@@ -1653,7 +1725,6 @@ export default function Home() {
               <dl
                 className="mt-3 space-y-1.5 text-xs text-slate-600"
                 onTouchStart={handleDaySummaryTouchStart}
-                onTouchMove={handleDaySummaryTouchMove}
                 onTouchEnd={handleDaySummaryTouchEnd}
                 style={{
                   touchAction: "pan-y",
@@ -1673,23 +1744,6 @@ export default function Home() {
                     Naujesnė ▶︎
                   </span>
                 </div>
-                {daySummarySwipeDirection && (
-                  <div
-                    aria-hidden="true"
-                    className="mb-1 flex items-center justify-center"
-                    style={{
-                      color: "rgba(71, 85, 105, 0.85)",
-                      fontWeight: 700,
-                      fontSize: 12,
-                      letterSpacing: "0.02em",
-                    }}
-                  >
-                    {daySummarySwipeDirection === "older" ? "◀︎" : "▶︎"}{" "}
-                    {daySummarySwipeDirection === "older"
-                      ? "senesnė diena"
-                      : "tolimesnė diena"}
-                  </div>
-                )}
                 <div className="flex items-center justify-between rounded-2xl bg-sky-50 px-3 py-2 ring-1 ring-sky-100">
                   <dt className="text-[11px] font-medium text-slate-700">
                     Mišinėlis
@@ -1819,23 +1873,21 @@ export default function Home() {
                     Miegas
                   </dt>
                   <dd className="flex items-center justify-end gap-1 text-right text-[11px] font-semibold text-purple-700">
-                    <span>{todaySleepHoursLabel}</span>
+                    <span>{todaySleepHoursLabelUi}</span>
                     <span
                       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                        stats.todaySleepMinutes -
-                          prevStats.todaySleepMinutes >
+                        todaySleepMinutesUi - prevSleepMinutesUi >
                         0
                           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : stats.todaySleepMinutes -
-                              prevStats.todaySleepMinutes <
+                          : todaySleepMinutesUi - prevSleepMinutesUi <
                             0
                           ? "border-rose-200 bg-rose-50 text-rose-700"
                           : "border-slate-200 bg-slate-50 text-slate-600"
                       }`}
                     >
                       {formatDelta(
-                        stats.todaySleepMinutes,
-                        prevStats.todaySleepMinutes
+                        todaySleepMinutesUi,
+                        prevSleepMinutesUi
                       )}{" "}
                       min
                     </span>
