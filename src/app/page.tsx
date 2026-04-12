@@ -1034,6 +1034,8 @@ export default function Home() {
   const activeSleepMinutesSelectedDay = useMemo(() => {
     if (!activeSleep) return 0;
     if (!selectedDateKey) return 0;
+    // Jei peržvelgiau senesnę dieną (ne šiandien), aktyvus miegas nerelevantus
+    if (selectedDateKey !== todayKeyLt()) return 0;
     const range = getVilniusDayRangeMs(selectedDateKey);
     if (!range) return 0;
     const startMs = new Date(activeSleep.time).getTime();
@@ -1044,13 +1046,15 @@ export default function Home() {
 
   const activeSleepMinutesPrevDay = useMemo(() => {
     if (!activeSleep || !prevDayKey) return 0;
+    // Jei peržvelgiau senesnę dieną (ne šiandien), aktyvus miegas nerelevantus
+    if (selectedDateKey !== todayKeyLt()) return 0;
     const range = getVilniusDayRangeMs(prevDayKey);
     if (!range) return 0;
     const startMs = new Date(activeSleep.time).getTime();
     const endMs = now.getTime();
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return 0;
     return overlapMinutes(startMs, endMs, range.startMs, range.endMs);
-  }, [activeSleep, prevDayKey, now]);
+  }, [activeSleep, prevDayKey, now, selectedDateKey]);
 
   const todaySleepMinutesUi = stats.todaySleepMinutes + activeSleepMinutesSelectedDay;
   const prevSleepMinutesUi =

@@ -115,6 +115,9 @@ export default function StatistikaPage() {
       totalDirtyDiapers: 0,
       totalBothDiapers: 0,
       totalSleepMinutes: 0,
+      sleepSessions: 0,
+      longestSleepMinutes: 0,
+      shortestSleepMinutes: 0,
     };
 
     for (const e of events) {
@@ -150,6 +153,14 @@ export default function StatistikaPage() {
         const end = new Date(e.sleepEnd).getTime();
         const minutes = Math.max(0, Math.round((end - start) / 60000));
         base.totalSleepMinutes += minutes;
+        base.sleepSessions += 1;
+        
+        if (base.longestSleepMinutes === 0 || minutes > base.longestSleepMinutes) {
+          base.longestSleepMinutes = minutes;
+        }
+        if (base.shortestSleepMinutes === 0 || minutes < base.shortestSleepMinutes) {
+          base.shortestSleepMinutes = minutes;
+        }
       }
     }
 
@@ -280,7 +291,34 @@ export default function StatistikaPage() {
                     {stats.totalSleepMinutes} min
                   </span>
                 </div>
-                {/* Papildomos grafikos čia nenaudojamos – rodome tik bendrą miego trukmę. */}
+                {stats.sleepSessions > 0 && (
+                  <>
+                    <div className="pt-1 border-t border-dashed border-indigo-100 mt-2">
+                      <div className="flex items-center justify-between">
+                        <span>Miego sesijų</span>
+                        <span className="font-semibold text-indigo-700">
+                          {stats.sleepSessions}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <span>Vidutinis miegas</span>
+                        <span className="font-semibold text-indigo-600">
+                          {Math.round(stats.totalSleepMinutes / stats.sleepSessions)} min
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      <p className="flex items-center justify-between text-[11px] text-slate-600">
+                        <span>Ilgiausias</span>
+                        <span className="font-semibold">{stats.longestSleepMinutes} min</span>
+                      </p>
+                      <p className="flex items-center justify-between text-[11px] text-slate-600">
+                        <span>Trumpiausias</span>
+                        <span className="font-semibold">{stats.shortestSleepMinutes} min</span>
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </section>
