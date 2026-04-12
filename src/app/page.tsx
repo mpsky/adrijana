@@ -152,6 +152,21 @@ function getVilniusDayRangeMs(dayKey: string) {
   return { startMs, endMs };
 }
 
+function getPrevDayKey(dayKey: string) {
+  const range = getVilniusDayRangeMs(dayKey);
+  if (!range) return null;
+  const prevMs = range.startMs - 24 * 60 * 60 * 1000;
+  const prevDate = new Date(prevMs);
+  return prevDate
+    .toLocaleDateString("lt-LT", {
+      timeZone: "Europe/Vilnius",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+    .replace(/\./g, "-");
+}
+
 function overlapMinutes(startMs: number, endMs: number, rangeStartMs: number, rangeEndMs: number) {
   const s = Math.max(startMs, rangeStartMs);
   const e = Math.min(endMs, rangeEndMs);
@@ -856,18 +871,13 @@ export default function Home() {
   );
 
   const prevDayKey = useMemo(() => {
-    const idx = availableDateKeys.findIndex((k) => k === selectedDateKey);
-    if (idx === -1 || idx + 1 >= availableDateKeys.length) return null;
-    return availableDateKeys[idx + 1] ?? null;
-  }, [availableDateKeys, selectedDateKey]);
+    return getPrevDayKey(selectedDateKey);
+  }, [selectedDateKey]);
 
   const prevStats = useMemo(() => {
-    // surandame „vakar“ pagal turimų įrašų sąrašą, o ne kalendoriaus datą.
-    // availableDateKeys yra surūšiuotas DESC (naujausia diena pirmoje vietoje),
-    // todėl „vakar“ yra elementas su indeksu idx + 1.
-    const idx = availableDateKeys.findIndex((k) => k === selectedDateKey);
-    // jei pasirinkta diena nerasta arba ji yra paskutinė sąraše – neturime su kuo lyginti
-    if (idx === -1 || idx + 1 >= availableDateKeys.length) {
+    // naudojame kalendorinį vakar dieną
+    const key = getPrevDayKey(selectedDateKey);
+    if (!key) {
       return {
         todayFormulaAmount: 0,
         todayExpressedAndUsed: 0,
@@ -876,7 +886,6 @@ export default function Home() {
         todayPumpedAmount: 0,
       };
     }
-    const key = availableDateKeys[idx + 1];
     const keyRange = getVilniusDayRangeMs(key);
     const base = {
       todayFormulaAmount: 0,
@@ -915,7 +924,7 @@ export default function Home() {
       }
     }
     return base;
-  }, [events, availableDateKeys, selectedDateKey]);
+  }, [events, selectedDateKey]);
 
   const daySummaryTouchStartRef = useRef<{ x: number; y: number } | null>(
     null
